@@ -9,7 +9,6 @@ import io
 import socket
 import time
 import numpy as np
-import numpy as np
 import matplotlib.pyplot as plt
 from numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
 
@@ -20,10 +19,18 @@ def I_cal(I_set):
 def UDP_send(message):
     sock.sendto(message,ENGINE)
     data, addr = sock.recvfrom(128)
-def Focus(f):
-    make_spots([[2,3,f,1],[0,3.5,f,1],[-2,3,f,1]])
-def I(i,f=300):
-    make_spots([[2,3,f,1],[0,3.5,f,i],[-2,3,f,1]])
+def set_uniform(uniform_id, value):
+    """Set the value of a uniform variable.
+    
+    uniform_id : int
+        The number (starting from 0) of the uniform to set
+    value : list of float
+        The value to give the uniform variable.
+    """
+    UDP_send("<data>\n<uniform id={0}>\n".format(uniform_id) +
+        " ".join(map(lambda x: "%f" % x, value)) +
+        "</uniform>\n</data>\n")
+
 def sq_array(x,y,dk=1,d=None,f=0.0,n=3,reference=False):
     x = float(x)
     y = float(y)
@@ -105,14 +112,22 @@ def make_spots(spots):
     </uniform>
     </data>
     """ % (" ".join(np.char.mod("%f", np.reshape(spots,spots.shape[0]*spots.shape[1]))),spots.shape[0]))
-def check_hologram():
-    """Move the hologram onto the primary monitor to check it."""
+def move_hologram(x=0, y=0, w=1024, h=768):
+    """Move the hologram on the screen."""
     UDP_send("""<data>
 <window_rect>
-0,0,1024,768
+{0},{1},{2},{3}
 </window_rect>
 </data>
-""")
+""".format(x, y, w, h))
+def set_centre(x=0.5, y=0.5):
+    """Move the hologram onto the primary monitor to check it."""
+    UDP_send("""<data>
+<uniform id=6>
+{0} {1}
+</uniform>
+</data>
+""".format(x, y))
 
 def setup_shader():
     """Set up the shader program that will render our holograms."""
@@ -132,7 +147,8 @@ uniform float radialPhase[384];
 uniform float radialPhaseDr = 0.009 * 2.0;
 const float k=15700; //units of mm-1
 const float f=1975.0; //mm
-const vec2 slmsize=vec2(6.9,6.9);
+const vec2 slmsize=vec2(6.9,6.9); //size of SLM
+uniform vec2 slmcentre=vec2(0.5,0.5); //centre of SLM
 const float pi = 3.141;
 
 float wrap2pi(float phase){
@@ -187,7 +203,7 @@ float radialPhaseFunction(vec2 uv){
 }
 
 void main(){ // basic gratings and lenses for a single spot
-  vec2 uv = (gl_TexCoord[0].xy - 0.5)*slmsize;
+  vec2 uv = (gl_TexCoord[0].xy - slmcentre)*slmsize;
   vec3 pos = vec3(k*uv/f, -k*dot(uv,uv)/(2.0*f*f));
   float phase, real=0.0, imag=0.0;
   for(int i; i<2*n; i+=2){
@@ -262,19 +278,12 @@ def update_gaussian_to_tophat(initial_r, final_r, distance=750e3):
                                                   final_r, #final radius
                                                   distance, #propagation distance
                                                   wrap=False) #don't phase-wrap
-    UDP_send("""<data>
-<uniform id=4>
-""" + " ".join(map(lambda x: "%f" % x, gaussian_to_tophat)) + """</uniform></data>
-""")
+    set_uniform(4, gaussian_to_tophat)
 
 def disable_gaussian_to_tophat():
     """Set the radial phase function to zero"""
-    gaussian_to_tophat = np.zeros((384,))
-    UDP_send("""<data>
-<uniform id=4>
-""" + " ".join(map(lambda x: "%f" % x, gaussian_to_tophat)) + """</uniform></data>
-"""
-             )
+    set_uniform(4, np.zeros((384,)))
+    
 def make_shack_hartmann(N, width, x=0, y=0, z=0, ref=False):
     """Make a square-array shack-hartmann sensor.
     
@@ -296,12 +305,6 @@ if __name__ == "__main__":
     
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #make a UDP socket
     sock.settimeout(1.0)
-    
-    table = {}
-    with open("intensity_calibration_table.csv", 'r') as file:
-        for line in file:
-            list = line.rstrip().split(',')
-            table[float(list[0])] = float(list[1])
 
     setup_shader();
 
@@ -310,25 +313,10 @@ if __name__ == "__main__":
        139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
        255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
     
-    UDP_send("""<data>
-<uniform id=0>
-1.0 5.0 0.0 1.0 0.0 0.0 1.0 0.0
-</uniform>
-<uniform id=1>
-10
-</uniform>
-<uniform id=2>
-""" + " ".join(map(lambda x: "%f" % x, blazing_function)) + """</uniform>
-<uniform id=3>
-""" + " ".join(map(lambda x: "%f" % x, np.zeros((12,)))) + """</uniform></data>
-"""
-    )
-    update_gaussian_to_tophat(1800,3000, distance=1975e3)
-    make_spots([[6,5,0,1],[-6,5,0,1]])#phase grating
-#the following function makes diffraction spots at up to ten places.
-#it takes a list of [[x,y,z,intensity]] for each spot.  Keep intensity set at 1,
-#and the rest are nominally in mm.
-#make_spots([[1,0,0,1],[-1,0,0,1]])#binary grating
-#make_spots([[1,0,0,1]])#phase grating
-#make_spots([[1,0.866,0,1],[-1,0.866,0,1],[0,-1,0,1]])#3 spots
-#make_spots([[0,5,00,1]])
+    set_uniform(0, [1.0, 5.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0,])
+    set_uniform(1, 1)
+    set_uniform(2, blazing_function)
+    set_uniform(3, np.zeros((12,)))
+    update_gaussian_to_tophat(1900,3000, distance=1975e3)
+    make_spots([[20,10,0,1],[-20,10,0,1]])
+    
