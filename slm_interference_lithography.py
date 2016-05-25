@@ -105,6 +105,15 @@ def make_spots(spots):
     </uniform>
     </data>
     """ % (" ".join(np.char.mod("%f", np.reshape(spots,spots.shape[0]*spots.shape[1]))),spots.shape[0]))
+def check_hologram():
+    """Move the hologram onto the primary monitor to check it."""
+    UDP_send("""<data>
+<window_rect>
+0,0,1024,768
+</window_rect>
+</data>
+""")
+
 def setup_shader():
     """Set up the shader program that will render our holograms."""
     UDP_send("""<data>
@@ -122,7 +131,7 @@ uniform float zernikeCoefficients[12];
 uniform float radialPhase[384];
 uniform float radialPhaseDr = 0.009 * 2.0;
 const float k=15700; //units of mm-1
-const float f=750.0; //mm
+const float f=1975.0; //mm
 const vec2 slmsize=vec2(6.9,6.9);
 const float pi = 3.141;
 
@@ -314,7 +323,7 @@ if __name__ == "__main__":
 """ + " ".join(map(lambda x: "%f" % x, np.zeros((12,)))) + """</uniform></data>
 """
     )
-    update_gaussian_to_tophat(1800,3000)
+    update_gaussian_to_tophat(1800,3000, distance=1975e3)
     make_spots([[6,5,0,1],[-6,5,0,1]])#phase grating
 #the following function makes diffraction spots at up to ten places.
 #it takes a list of [[x,y,z,intensity]] for each spot.  Keep intensity set at 1,
