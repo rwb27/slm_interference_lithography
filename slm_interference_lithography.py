@@ -27,6 +27,10 @@ def set_uniform(uniform_id, value):
     value : list of float
         The value to give the uniform variable.
     """
+    try:
+        value[0]
+    except:
+        value = [value]
     UDP_send("<data>\n<uniform id={0}>\n".format(uniform_id) +
         " ".join(map(lambda x: "%f" % x, value)) +
         "</uniform>\n</data>\n")
