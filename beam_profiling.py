@@ -6,6 +6,9 @@ Created on Wed May 25 16:26:16 2016
 """
 
 from nplab.instrument import Instrument
+from nplab.instrument.light_sources.ondax_laser import OndaxLaser
+from nplab.instrument.shutter.southampton_custom import ILShutter
+from slm_interference_lithography import VeryCleverBeamsplitter()
 import time
 
 def beam_profile_on_SLM(spot, N, overlap=0.0):
@@ -56,4 +59,18 @@ def optimise_aberration_correction(zernike_coefficients, merit_function, tweak_a
             coefficients[i] = values[merits.argmax()]
     return coefficients
 
+if __name__ == '__main__':
+    slm = VeryCleverBeamsplitter()
+    shutter = ILShutter("COM3")
+    slm.move_hologram(-1024,0,1024,768)
+    # set uniform values so it has a blazing function and no aberration correction
+    blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
+       139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
+       255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
+    
+    slm.blazing_function = blazing_function
+    slm.update_gaussian_to_tophat(1900,3000, distance=1975e3)
+    slm.make_spots([[20,10,0,1],[-20,10,0,1]])
+    shutter.open_shutter()
+    
                     
