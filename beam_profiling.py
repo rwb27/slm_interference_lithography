@@ -105,7 +105,16 @@ if __name__ == '__main__':
     intensity = beam_profile_on_SLM(slm, cam, spot, N, overlap=0.5)
     centroid = np.array(scipy.ndimage.measurements.center_of_mass(intensity))
     actual_centre = (centroid+0.5)/float(N)
-    #plt.imshow(intensity)
+    #
+    plt.ion()
+    plt.figure()
+    plt.imshow(intensity)
+    plt.figure()
+    for i in range(10):
+        plt.plot(intensity[:,i])
+    plt.figure()
+    for i in range(10):
+        plt.plot(intensity[i,:])
 """
 
 """
