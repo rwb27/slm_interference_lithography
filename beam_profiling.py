@@ -10,6 +10,7 @@ from nplab.instrument.light_sources.ondax_laser import OndaxLaser
 from nplab.instrument.shutter.southampton_custom import ILShutter
 from nplab.instrument.camera.opencv import OpenCVCamera
 from slm_interference_lithography import VeryCleverBeamsplitter
+from nplab.utils.gui import show_guis
 import numpy as np
 import matplotlib.pyplot as plt
 import time
@@ -75,6 +76,7 @@ if __name__ == '__main__':
     slm.update_gaussian_to_tophat(1900,3000, distance=1975e3)
     slm.make_spots([[20,10,0,1],[-20,10,0,1]])
     shutter.open_shutter()
+    guis = show_guis([shutter, cam], block=False)
     
 """
     # Optimise SLM for aberrations
