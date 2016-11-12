@@ -84,11 +84,27 @@ if __name__ == '__main__':
     slm.zernike_coefficients = zernike_coefficients
     slm.update_gaussian_to_tophat(2000,1, distance=2050e3)
     slm.make_spots([[-20,10,0,1]])
-    cam.exposure=-2
+    slm.make_spots([[20,10.2,0,0.3],[0,0,0,1]])
+    cam.exposure=0
     def merit_function():
         time.sleep(0.1)
         cam.color_image()
         return np.max(scipy.ndimage.uniform_filter(cam.color_image()[:,:,2], 17))
+    ## TURN LIGHTS OFF!
+    o,s = calibrate_hdr_from_rgb(cam.color_image())
+    hdr = hdr_from_rgb(o,s,cam.color_image())
+    plt.plot(hdr[240,:])
+    def beam_sd():
+        time.sleep(0.1)
+        hdr = hdr_from_rgb(o,s,cam.color_image())
+        x = np.mean(hdr * np.arange(hdr.shape[0])[:,np.newaxis])/np.mean(hdr)
+        y = np.mean(hdr * np.arange(hdr.shape[1])[np.newaxis,:])/np.mean(hdr)
+        dx2 = np.mean(hdr * ((np.arange(hdr.shape[0])-x)**2)[:,np.newaxis])/np.mean(hdr)
+        dy2 = np.mean(hdr * ((np.arange(hdr.shape[1])-y)**2)[np.newaxis,:])/np.mean(hdr)
+        sd = np.sqrt(dx2+dy2)
+        return 1/sd
+    merit_function = lambda: np.mean([beam_sd() for i in range(10)])
+    
     zernike_coefficients = optimise_aberration_correction(slm, 
                                     cam, zernike_coefficients, merit_function, 
                                     dz=0.2)
