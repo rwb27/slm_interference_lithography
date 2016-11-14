@@ -108,7 +108,7 @@ def measure_modes(slm, snapshot_fn, spot, N, dz=1, **kwargs):
         print
     return out
     
-def optimise_aberration_correction(slm, cam, zernike_coefficients, merit_function, dz=1):
+def optimise_aberration_correction(slm, cam, zernike_coefficients, merit_function, dz=1, modes=None):
     """Tweak the Zernike coefficients incrementally to optimise them."""
 
     def test_coefficients(coefficients):
@@ -116,8 +116,8 @@ def optimise_aberration_correction(slm, cam, zernike_coefficients, merit_functio
         return merit_function()
     
     coefficients = np.array(zernike_coefficients)
-    for i in range(len(coefficients)):
-        values = np.array([-2,-1,0,1,2]) * dz + coefficients[i]
+    for i in (range(len(coefficients)) if modes is None else modes):
+        values = np.array([-1,0,1]) * dz + coefficients[i]
         merits = np.zeros(values.shape[0])
         for j, v in enumerate(values):
             coefficients[i] = v
@@ -140,8 +140,11 @@ if __name__ == '__main__':
     blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
        139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
        255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
-    
+    def dim_slm(dimming):
+        slm.blazing_function = (blazing_function - 0.5)*dimming + 0.5
     slm.blazing_function = blazing_function
+    known_good_zernike = np.array([ 0.5,  4.4, -0.5, -0.3,  0.3,  0.4, -0.3,  0.1,  0.1, -0.2,  0.2, -0.1])
+    slm.zernike_coefficients = known_good_zernike
     slm.update_gaussian_to_tophat(1900,3000, distance=1975e3)
     slm.make_spots([[20,10,0,1],[-20,10,0,1]])
     shutter.open_shutter()
@@ -182,17 +185,24 @@ for m, ax in zip(modes[:12], axes_flat):
     slm.make_spots([[-20,10,0,1]])
     slm.make_spots([[20,10.2,0,0.3],[0,0,0,1]])
     # or disable gaussian to tophat and
-    slm.make_spots([[20,10,2050,0.5],[0,0,0,1]])
+    slm.make_spots([[20,10,2050,1]])
+    dim_slm(0.2)
     cam.exposure=0
     def brightest_hdr():
         time.sleep(0.1)
+        cam.color_image()
+        time.sleep(0.1)
         hdr = hdr_from_rgb(o,s,cam.color_image())
+        for i in range(4):
+            hdr += hdr_from_rgb(o,s,cam.color_image())
+        hdr /= 5
         return np.max(scipy.ndimage.uniform_filter(hdr, 17))
     ## TURN LIGHTS OFF!
     o,s = calibrate_hdr_from_rgb(cam.color_image())
     hdr = hdr_from_rgb(o,s,cam.color_image())
     plt.plot(hdr[240,:])
     def beam_sd():
+        cam.color_image()
         time.sleep(0.1)
         hdr = hdr_from_rgb(o,s,cam.color_image())
         x = np.mean(hdr * np.arange(hdr.shape[0])[:,np.newaxis])/np.mean(hdr)
@@ -205,7 +215,10 @@ for m, ax in zip(modes[:12], axes_flat):
         return lambda: np.mean([f() for i in range(n)])
     merit_function = lambda: np.mean([beam_sd() for i in range(3)])
     
-    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.5)
+    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_hdr, dz=0.5, modes=[1])
+    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_hdr, dz=0.3, modes=[0,1,2])
+    for dz in [0.2,0.15,0.1,0.07, 0.05]:
+        zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_hdr, dz=0.1)
     zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
     zernike_coefficients = optimise_aberration_correction(slm, 
                                     cam, zernike_coefficients, merit_function, 
