@@ -18,7 +18,7 @@ uniform float zernikeCoefficients[12];
 uniform float radialPhase[384];
 uniform float radialPhaseDr = 0.009 * 2.0;
 const float k=15700; //units of mm-1
-const float f=1975.0; //mm
+const float f=3500.0; //mm
 const vec2 slmsize=vec2(6.9,6.9); //size of SLM
 uniform vec2 slmcentre=vec2(0.5,0.5); //centre of SLM
 const float pi = 3.141;
@@ -226,6 +226,6 @@ if __name__ == "__main__":
        255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
     
     slm.blazing_function = blazing_function
-    slm.update_gaussian_to_tophat(1900,3000, distance=1975e3)
-    slm.make_spots([[20,10,0,1],[-20,10,0,1]])
+    slm.update_gaussian_to_tophat(1900*3/2,3000, distance=3500e3)
+    slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
     
