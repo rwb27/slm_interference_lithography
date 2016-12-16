@@ -132,8 +132,8 @@ def optimise_aberration_correction(slm, cam, zernike_coefficients, merit_functio
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
-    shutter = ILShutter("COM3")
-    laser = OndaxLaser("COM1")
+    shutter = ILShutter("COM1")
+    #laser = OndaxLaser("COM4")
     cam = OpenCVCamera()
     slm.move_hologram(-1024,0,1024,768)
     # set uniform values so it has a blazing function and no aberration correction
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     slm.blazing_function = blazing_function
     known_good_zernike = np.array([ 0.5,  4.4, -0.5, -0.3,  0.3,  0.4, -0.3,  0.1,  0.1, -0.2,  0.2, -0.1])
     slm.zernike_coefficients = known_good_zernike
-    slm.update_gaussian_to_tophat(1900,3000, distance=1975e3)
+    slm.update_gaussian_to_tophat(1900,3000, distance=3500e3)
     slm.make_spots([[20,10,0,1],[-20,10,0,1]])
     shutter.open_shutter()
     guis = show_guis([shutter, cam], block=False)
@@ -265,4 +265,20 @@ for m, ax in zip(modes[:12], axes_flat):
         focus_stack[i,:,:] = cam.color_image()[:,:,2]
     plt.figure()
     plt.imshow(focus_stack[:,240,:],aspect="auto")
+"""
+"""
+# Scan through a parameter, plotting sections of the beam
+xsection = np.zeros((30,640,3),dtype=np.uint8)
+ysection = np.zeros((xsection.shape[0],480,3),dtype=np.uint8)
+rs = np.linspace(-5,5,xsection.shape[0])
+for i, r in enumerate(rs):
+    slm.zernike_coefficients = [-1.3,0.8,r,0,0,0,0,0,0,0,0,0,]
+    time.sleep(0.1)
+    img = cam.color_image()
+    img = cam.color_image()
+    xsection[i,:,:] = np.mean(img[230:250,:,:], axis=0)
+    ysection[i,:,:] = np.mean(img[:,310:330,:], axis=1)
+f, axes = plt.subplots(1,2)
+axes[0].imshow(xsection,aspect='auto',extent = (0,640,rs.max(), rs.min()))
+axes[1].imshow(ysection,aspect='auto',extent = (0,480,rs.max(), rs.min()))
 """
