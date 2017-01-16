@@ -145,6 +145,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     centre = UniformProperty(6, max_length=2)
     blazing_function = UniformProperty(2, max_length=32)
     zernike_coefficients = UniformProperty(3, max_length=12)
+    radial_phase_function = UniformProperty(4, max_length=384)
 
     def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False):
         """Calculate a radial phase function to re-map from gaussian to top-hat.
@@ -202,7 +203,8 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
 
     def disable_gaussian_to_tophat(self):
         """Set the radial phase function to zero"""
-        self.set_uniform(4, np.zeros((384,)))
+        #self.set_uniform(4, np.zeros((384,)))
+        self.radial_phase_function = np.zeros((384,))
     
     def make_shack_hartmann(self, N, width, x=0, y=0, z=0, ref=False):
         """Make a square-array shack-hartmann sensor.
