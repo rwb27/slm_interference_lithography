@@ -147,14 +147,14 @@ if __name__ == '__main__':
     slm.blazing_function = blazing_function
     known_good_zernike = np.array([ 0.5,  4.4, -0.5, -0.3,  0.3,  0.4, -0.3,  0.1,  0.1, -0.2,  0.2, -0.1])
     slm.zernike_coefficients = known_good_zernike
-    slm.update_gaussian_to_tophat(1900,3000, distance=3500e3)
-    slm.make_spots([[20,10,0,1],[-20,10,0,1]])
+    slm.update_gaussian_to_tophat(1900*1.5,3000, distance=3500e3)
+    slm.make_spots([[25,-10,0,1],[-25,-10,0,1]])
     shutter.open_shutter()
     guis = show_guis([shutter, cam], block=False)
 
 """
 # Sequential Shack-Hartmann sensor
-slm.make_spots([[20,10,2050,1,0,0,0.15,0],[0,0,0,3,0,0,1,0]])
+slm.make_spots([[25,-10,0,1,0.2,0,0.05,0]])
 zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
 
@@ -186,7 +186,7 @@ for m, ax in zip(modes[:12], axes_flat):
     zernike_coefficients = np.zeros(12)
     slm.zernike_coefficients = zernike_coefficients
     slm.update_gaussian_to_tophat(2000,1, distance=2050e3)
-    slm.make_spots([[-20,10,0,1]])
+    slm.make_spots([[25,10,0,1]])
     slm.make_spots([[20,10.2,0,0.3],[0,0,0,1]])
     # or disable gaussian to tophat and
     slm.make_spots([[20,10,2050,1]])
@@ -231,8 +231,8 @@ for m, ax in zip(modes[:12], axes_flat):
     
     zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.5, modes=[1])
     zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.3, modes=[0,1,2])
-    for dz in [0.2,0.15,0.1,0.07, 0.05]:
-        zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.1)
+    for dz in [0.2,0.15,0.1,0.07]:
+        zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=dz)
     zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
     zernike_coefficients = optimise_aberration_correction(slm, 
                                     cam, zernike_coefficients, merit_function, 

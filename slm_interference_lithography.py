@@ -77,20 +77,17 @@ float radialPhaseFunction(vec2 uv){
 void main(){ // basic gratings and lenses for a single spot
   vec2 uv = (gl_TexCoord[0].xy - slmcentre)*slmsize;
   vec3 pos = vec3(k*uv/f, -k*dot(uv,uv)/(2.0*f*f));
+  float basephase = zernikeAberration() + radialPhaseFunction(uv);
   float phase, real=0.0, imag=0.0;
   for(int i; i<2*n; i+=2){
     if(length(uv/slmsize - spots[i+1].xy) < spots[i+1][2]){
-      phase = dot(pos, spots[i].xyz);
+      phase = dot(pos, spots[i].xyz) + basephase;
       float amp = spots[i][3];
       real += amp * sin(phase);
       imag += amp * cos(phase);
     }
   }
   phase = atan(real, imag);
-  phase += zernikeAberration();
-  phase = wrap2pi(phase);
-  phase += radialPhaseFunction(uv);
-  phase = wrap2pi(phase);
   float g = apply_LUT(phase);
   gl_FragColor=vec4(g,g,g,1.0);
 }
