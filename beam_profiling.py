@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import scipy.ndimage
-from rgb_to_hdr import calibrate_hdr_from_rgb, hdr_from_rgb
+from rgb_to_hdr import calibrate_hdr_from_rgb, hdr_from_rgb, fit_channels
 import nplab.utils.gui
 
 def beam_profile_on_SLM(slm, cam, spot, N, overlap=0.0):
@@ -147,8 +147,11 @@ if __name__ == '__main__':
     slm.blazing_function = blazing_function
     known_good_zernike = np.array([ 0.5,  4.4, -0.5, -0.3,  0.3,  0.4, -0.3,  0.1,  0.1, -0.2,  0.2, -0.1])
     slm.zernike_coefficients = known_good_zernike
-    slm.update_gaussian_to_tophat(1900*1.5,3000, distance=3500e3)
-    slm.make_spots([[25,-10,0,1],[-25,-10,0,1]])
+    slm.update_gaussian_to_tophat(1900,100, distance=2900e3)
+    slm.update_gaussian_to_tophat(1900,1000, distance=2900e3)
+    slm.update_gaussian_to_tophat(1900,2000, distance=2900e3)
+    slm.update_gaussian_to_tophat(1900,3000, distance=2900e3)
+    slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
     shutter.open_shutter()
     guis = show_guis([shutter, cam], block=False)
 
@@ -162,14 +165,17 @@ slm.zernike_coefficients = zernike_coefficients
 cam.exposure=-2
 
 ## TURN LIGHTS OFF!
-o,s = calibrate_hdr_from_rgb(cam.color_image())
+#o,s = calibrate_hdr_from_rgb(cam.color_image())
+o = [0,0,0]
+s = [0,0,1]
+s[0], o[0] = fit_channels(cam.color_image(), 0, 2, amin=0, amax=10, plot=True)
 hdr = hdr_from_rgb(o,s,cam.color_image())
 plt.plot(hdr[240,:])
 snap = snapshot_fn(cam, o, s)
 
 res = sequential_shack_hartmann(slm, snap, [20,10,2050,1], 7, overlap=0.5, other_spots=[[0,0,0,2,0,0,1,0]], pause=True)
-res = sequential_shack_hartmann(slm, snap, [25,-10,0,1], 5, overlap=0)
-res = sequential_shack_hartmann(slm, snap, [25,-10,0,1], 10, overlap=0)
+res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 5, overlap=0)
+res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 10, overlap=0)
 plot_shack_hartmann(res)
 
 # A brutal attempt at modal decomposition

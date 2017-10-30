@@ -16,7 +16,29 @@ import numpy as np
 #r = g*q0 + q1
 #so b = (g*q0 + q1)*p0 + p1
 #img = cam.color_image()
-
+def fit_channels(img,i,j, plot=False, amin=5, amax=240, bmin=5, bmax=240):
+    """Compare channels of an image, looking for linear relationships.
+    
+    img is the (RGB) image
+    i, j are the A and B channels    
+    amax and amin are the max/min values of the first channel allowed
+    bmax and bmin are the max/min values of the second channel allowed
+    
+    The return value is a 2-element list of the slope (0) and intercept (1)
+    """
+    a = img[:,:,i].flatten()
+    b = img[:,:,j].flatten()
+    r = np.logical_and(np.logical_and(a>amin, a<amax), np.logical_and(b>bmin, b<bmax))
+    coefficients = np.polyfit(a[r], b[r], 1) # m[0] is slope and m[1] is intercept
+    print "fitting channel {} to {}: got {}".format(j, i, coefficients)
+    if plot:
+        plt.figure()
+        plt.plot(a, b, '.')
+        x = np.arange(256)
+        plt.plot(x, x*coefficients[0] + coefficients[1], 'r-')
+    return coefficients
+    
+    
 def calibrate_hdr_from_rgb(img):
         """Calibrate the colour channels in an image for HDR
         
@@ -29,15 +51,11 @@ def calibrate_hdr_from_rgb(img):
         It returns a length-3 vector of offsets, and slopes such that
         blue = channel * slope[c] + offset[c]
         """
-        def fit_channels(img,i,j):
-            a = img[:,:,i].flatten()
-            b = img[:,:,j].flatten()
-            r = np.logical_and(np.logical_and(a>20, a<200), np.logical_and(b>20, b<200))
-            return np.polyfit(a[r], b[r], 1)
+
         
         offsets = [0,0,0]
         slopes = [0,0,1]
-        p = fit_channels(img, 0,2) #calibrate red to blue
+        p = fit_channels(img, 0,2, plot=True) #calibrate red to blue
         offsets[0] = p[1]
         slopes[0] = p[0]
         q = fit_channels(img, 1,0) #calibrate green to red
@@ -50,16 +68,12 @@ def calibrate_hdr_from_rgb(img):
 def hdr_from_rgb(offsets, slopes, rgb):
         """Convert RGB to an HDR image
         
-        We assume, as above, that the laser is blue, and leaks into red then
-        green.
+        We assume, as above, that the laser is blue, and leaks into red. We
+        ignore the green channel.
         """
-        rgbt = rgb.copy()
-        rgbt[np.logical_and(rgb>200, np.array([1,0,1])[np.newaxis, np.newaxis,:])] = 0
-        rgbt[np.logical_and(rgb<10, np.array([1,1,0])[np.newaxis, np.newaxis,:])] = 0
-        brgt = rgbt[:,:,(2,0,1)] # Order them so they prefer B
-        pick = np.argmax(brgt, axis=2) # Pick the brightest unsaturated channel
-        pick = np.array([2,0,1])[pick] # fix indices so they are rgb
-        hdr = rgbt.max(axis=2).astype(np.float) * slopes[pick] + offsets[pick]
+        hdr = rgb[:,:,2].astype(np.float) #start with blue
+        saturated_pixels = hdr>200
+        hdr[saturated_pixels] = rgb[:,:,0][saturated_pixels].astype(np.float) * slopes[0] + offsets[0] #fill in with red
         return hdr
 
 
