@@ -8,6 +8,8 @@ Created on Mon Dec 01 12:04:12 2014
 import numpy as np
 from opengl_holograms import OpenGLShaderWindow, UniformProperty
 
+RADIAL_ARRAY_LENGTH = 384
+
 # This is a big string constant that actually renders the hologram.  See below
 # for the useful Python code that you might want to use...
 IL_SHADER_SOURCE = """
@@ -15,8 +17,9 @@ uniform vec4 spots[100];
 uniform int n;
 uniform float blazing[32];
 uniform float zernikeCoefficients[12];
-uniform float radialPhase[384];
+uniform float radialPhase["""+str(RADIAL_ARRAY_LENGTH)+"""];
 uniform float radialPhaseDr = 0.009 * 2.0;
+uniform float radialBlaze["""+str(RADIAL_ARRAY_LENGTH)+"""];
 const float k=15700; //units of mm-1
 const float f=3500.0; //mm
 const vec2 slmsize=vec2(6.9,6.9); //size of SLM
@@ -71,7 +74,14 @@ float radialPhaseFunction(vec2 uv){
   float r = sqrt(dot(uv,uv));
   int index = int(floor(r/radialPhaseDr));
   float alpha = fract(r/radialPhaseDr);
-  return radialPhase[index] * (1.0-alpha) + radialPhase[index+1] * alpha;
+  return mix(radialPhase[index], radialPhase[index+1], alpha);
+}
+float radialBlazeFunction(vec2 uv){
+  //calculate a radially-symmetric phase function from the uniform radialPhase
+  float r = sqrt(dot(uv,uv));
+  int index = int(floor(r/radialPhaseDr));
+  float alpha = fract(r/radialPhaseDr);
+  return mix(radialBlaze[index], radialBlaze[index+1], alpha);
 }
 
 void main(){ // basic gratings and lenses for a single spot
@@ -87,8 +97,10 @@ void main(){ // basic gratings and lenses for a single spot
       imag += amp * cos(phase);
     }
   }
+  
   phase = atan(real, imag);
   float g = apply_LUT(phase);
+  g = (g-0.5) * radialBlazeFunction(uv) + 0.5;
   gl_FragColor=vec4(g,g,g,1.0);
 }
 """
@@ -111,6 +123,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         self.blazing_function = np.linspace(0,1,32)
         self.zernike_coefficients = np.zeros(12)
         self.disable_gaussian_to_tophat()
+        self.radial_blaze_function = np.ones(RADIAL_ARRAY_LENGTH)
 
     def make_spots(self, spots):
         """Use the gratings-and-lenses algorithm to make a number of spots.
@@ -143,6 +156,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     blazing_function = UniformProperty(2, max_length=32)
     zernike_coefficients = UniformProperty(3, max_length=12)
     radial_phase_function = UniformProperty(4, max_length=384)
+    radial_blaze_function = UniformProperty(6, max_length=384)
 
     def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False):
         """Calculate a radial phase function to re-map from gaussian to top-hat.
@@ -159,7 +173,14 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         k = np.pi*2/wavelength
         # Next, calculate the phase shift as a function of radius
         def cumulative_I_gaussian(r, w):
-            """The fraction of a 2D Gaussian contained within a given radius."""
+            """The fraction of a 2D Gaussian contained within a given radius.
+            
+            The equation of the underlying gaussian is np.exp(-r**2/(w**2))
+            remember d/dx exp(-r^2/w^2) = exp(-r^2/w^2) * (-2r/w^2)
+            so int[0,R] e**(-r**2/w**2) r dr
+            = (2r/w^2) * [1 - exp(-r^2/w^2)]
+            The normalisation takes care of the 2r/w^2 term.
+            """
             return 1 - np.exp(-r**2/(w**2)) #NB there's no 2 as it's *intensity*
         def cumulative_I_tophat(r, r_beam):
             """Fraction of a top-hat contained within a given radius."""

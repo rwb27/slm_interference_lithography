@@ -17,6 +17,8 @@ import time
 import scipy.ndimage
 from rgb_to_hdr import calibrate_hdr_from_rgb, hdr_from_rgb, fit_channels
 import nplab.utils.gui
+import nplab
+from nplab.utils.array_with_attrs import ArrayWithAttrs
 
 def beam_profile_on_SLM(slm, cam, spot, N, overlap=0.0):
     """Scan a spot over the SLM, recording intensities as we go"""
@@ -50,9 +52,14 @@ def snapshot_fn(cam, o, s):
         return hdr_from_rgb(o, s, cam.color_image())
     return snap
     
-def sequential_shack_hartmann(slm, snapshot_fn, spot, N, overlap=0.0, other_spots=[], pause=False):
+def sequential_shack_hartmann(slm, snapshot_fn, spot, N, overlap=0.0, other_spots=[], pause=False,save=True):
     """Scan a spot over the SLM, recording intensities as we go"""
-    results = np.zeros((N, N, 3)) # For each position, find X,Y,I
+    results = ArrayWithAttrs(np.zeros((N, N, 3))) # For each position, find X,Y,I
+    results.attrs['spot'] = spot
+    results.attrs['n_apertures'] = N
+    results.attrs['overlap'] = overlap
+    results.attrs['other_spots'] = other_spots
+    results.attrs['pause_between_spots'] = pause
     if pause:
         app = nplab.utils.gui.get_qt_app()
     for i in range(N):
@@ -66,20 +73,26 @@ def sequential_shack_hartmann(slm, snapshot_fn, spot, N, overlap=0.0, other_spot
                 raw_input("spot %d, %d (hit enter for next)" % (i, j))
                 app.processEvents()
             print '.',
-    return results
+    if save:
+        dset = nplab.current_datafile().create_dataset("sequential_shack_hartmann_%d", data=results)
+        return dset
+    else:
+        return results
     
-def plot_shack_hartmann(results):
+def plot_shack_hartmann(results, threshold=0.1):
     """Plot the results of the above wavefront sensor"""
     N = results.shape[0]
-    centre = np.mean(results[:,:,:2], axis=(0,1))
-    r = np.max(np.abs(results[:,:,:2]-centre))
+    weights = results[:,:,2] > results[:,:,2].max()*threshold
+    centre = np.mean(results[:,:,:2]*weights[:,:,np.newaxis], axis=(0,1))/np.mean(weights)
+    r = np.max(np.abs((results[:,:,:2]-centre)*weights[:,:,np.newaxis]))
     f, ax = plt.subplots(1,2)
     for i in range(N):
         for j in range(N):
-            u = (i+0.5)/N - 0.5
-            v = (j+0.5)/N - 0.5
-            shift = (results[i,j,:2] - centre)/r/N
-            ax[0].plot([u,u+shift[0]],[v,v+shift[1]],'o-')
+            if weights[i,j] > 0:
+                u = (i+0.5)/N - 0.5
+                v = (j+0.5)/N - 0.5
+                shift = (results[i,j,:2] - centre)/r/N
+                ax[0].plot([u,u+shift[0]],[v,v+shift[1]],'o-')
     ax[1].imshow(results[:,:,2], cmap='cubehelix')
     
 def plot_sh_shifts(ax, results, discard_edges=0):
@@ -131,6 +144,48 @@ def optimise_aberration_correction(slm, cam, zernike_coefficients, merit_functio
         coefficients[i] = values[merits.argmax()]
         test_coefficients(coefficients)
     return coefficients
+    
+    
+def calibrate_hdr():
+    """Fit the red channel vs the blue channel to calibrate the camera
+    
+    We return a snapshot function that yields an HDR image, made by using the 
+    red pixels in the Bayer patern to reconstruct the image when the blue
+    channel is saturated.
+    """
+    s = [0,0,0]
+    o = [0,0,1]
+    img = cam.color_image()
+    s[0], o[0] = fit_channels(img, 0, 2, amin=10, amax=50, plot=True)
+    df.create_dataset("hdr_calibration_image_%d",data=img, attrs={'slopes':s,'offsets':o})
+    hdr = hdr_from_rgb(o,s,cam.color_image())
+    for y in [200,210,220,230,240,250,260,270,280]:
+        plt.plot(hdr[y,:])
+    df.create_dataset("hdr_calibration_image_%d",data=img, attrs={'slopes':s,'offsets':o})
+    return snapshot_fn(cam, s, o)
+
+def focus_stack(N, dz, snap=None):
+    """Shift the focus (using Zernike modes) and acquire images."""
+    if snap is None:
+        global cam
+        snap = lambda: cam.color_image()[:,:,2]
+    img = snap()
+    focus_stack = ArrayWithAttrs(np.zeros((N,)+img.shape, dtype=img.dtype))
+    for i, d in enumerate(np.linspace(-dz,dz,N)):
+        z = zernike_coefficients.copy()
+        z[1] += d
+        slm.zernike_coefficients = z
+        time.sleep(0.1)
+        hide = cam.color_image()
+        time.sleep(0.1)
+        focus_stack[i,:,:] = cam.color_image()[:,:,2]
+    slm.zernike_coefficients=zernike_coefficients
+    plt.figure()
+    plt.imshow(focus_stack[:,240,:],aspect="auto")
+    focus_stack.attrs["dz"]=dz
+    focus_stack.attrs["zernike_coefficients"]=zernike_coefficients
+    dset = nplab.current_datafile().create_dataset("zstack_%d",data=focus_stack)
+    return dset
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
@@ -145,40 +200,39 @@ if __name__ == '__main__':
     def dim_slm(dimming):
         slm.blazing_function = (blazing_function - 0.5)*dimming + 0.5
     slm.blazing_function = blazing_function
-    known_good_zernike = np.array([ 0.5,  4.4, -0.5, -0.3,  0.3,  0.4, -0.3,  0.1,  0.1, -0.2,  0.2, -0.1])
-    slm.zernike_coefficients = known_good_zernike
-    slm.update_gaussian_to_tophat(1900,100, distance=2900e3)
+    known_good_zernike = np.array([ 0.1 ,  0.75,  0.5 ,  0.  , -0.55,  0.45,  
+                                   0.5 ,  0.5 ,  0.5 , -0.75,  0.05, -0.45])
+    slm.zernike_coefficients = np.zeros(12) #known_good_zernike
+    slm.update_gaussian_to_tophat(1900,1, distance=2900e3)
     slm.update_gaussian_to_tophat(1900,1000, distance=2900e3)
     slm.update_gaussian_to_tophat(1900,2000, distance=2900e3)
     slm.update_gaussian_to_tophat(1900,3000, distance=2900e3)
     slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
     shutter.open_shutter()
     guis = show_guis([shutter, cam], block=False)
+    df = nplab.current_datafile()
 
 """
-# Sequential Shack-Hartmann sensor
-slm.make_spots([[25,-10,0,1,0.2,0,0.05,0]])
-zernike_coefficients = np.zeros(12)
-slm.zernike_coefficients = zernike_coefficients
+test_spot = [20,-10,0,1];
+distance = 2900e3
 
 # Calibrate HDR processing
-cam.exposure=-2
-
+slm.make_spots([test_spot + [0,0,0.5,0]])
+slm.update_gaussian_to_tophat(1900,1, distance=distance)
 ## TURN LIGHTS OFF!
-#o,s = calibrate_hdr_from_rgb(cam.color_image())
-o = [0,0,0]
-s = [0,0,1]
-s[0], o[0] = fit_channels(cam.color_image(), 0, 2, amin=0, amax=10, plot=True)
-hdr = hdr_from_rgb(o,s,cam.color_image())
-plt.plot(hdr[240,:])
-snap = snapshot_fn(cam, o, s)
+cam.exposure=-2
+snap = calibrate_hdr()
 
-res = sequential_shack_hartmann(slm, snap, [20,10,2050,1], 7, overlap=0.5, other_spots=[[0,0,0,2,0,0,1,0]], pause=True)
-res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 5, overlap=0)
-res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 10, overlap=0)
+# Sequential Shack-Hartmann sensor
+slm.make_spots([[20,-10,0,1,0,0,0.075,0]])
+zernike_coefficients = np.zeros(12)
+slm.zernike_coefficients = zernike_coefficients
+dim_slm(1)
+cam.exposure=-5
+res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 10, overlap=0.5)
 plot_shack_hartmann(res)
 
-# A brutal attempt at modal decomposition
+# A brutal attempt at modal decomposition (not used)
 modes = measure_modes(slm, snap, [20,10,2050,1], 5, overlap=0)
 flat = modes[12]
 f, axes = plt.subplots(3,4)
@@ -186,105 +240,134 @@ axes_flat = [axes[i,j] for i in range(3) for j in range(4)]
 for m, ax in zip(modes[:12], axes_flat):
     plot_sh_shifts(ax, m - flat, discard_edges=1)
 """
-    
 """
-    # Optimise SLM for aberrations with modal wavefront sensor
-    zernike_coefficients = np.zeros(12)
-    slm.zernike_coefficients = zernike_coefficients
-    slm.update_gaussian_to_tophat(2000,1, distance=2050e3)
-    slm.make_spots([[25,10,0,1]])
-    slm.make_spots([[20,10.2,0,0.3],[0,0,0,1]])
-    # or disable gaussian to tophat and
-    slm.make_spots([[20,10,2050,1]])
-    dim_slm(0.2)
-    cam.exposure=0
-    def brightest_hdr():
-        time.sleep(0.1)
-        cam.color_image()
-        time.sleep(0.1)
-        hdr = hdr_from_rgb(o,s,cam.color_image())
-        for i in range(4):
-            hdr += hdr_from_rgb(o,s,cam.color_image())
-        hdr /= 5
-        return np.max(scipy.ndimage.uniform_filter(hdr, 17))
-    def brightest_g():
-        time.sleep(0.1)
-        cam.color_image()
-        img = cam.color_image()[...,0]
-        avg = np.zeros(shape = img.shape, dtype=np.float)
-        for i in range(4):
-            avg += cam.color_image()[...,1]
-        avg /= 4
-        return np.max(scipy.ndimage.uniform_filter(avg, 17))
-        
-    ## TURN LIGHTS OFF!
-    o,s = calibrate_hdr_from_rgb(cam.color_image())
-    hdr = hdr_from_rgb(o,s,cam.color_image())
-    plt.plot(hdr[240,:])
-    def beam_sd():
-        cam.color_image()
-        time.sleep(0.1)
-        hdr = hdr_from_rgb(o,s,cam.color_image())
-        x = np.mean(hdr * np.arange(hdr.shape[0])[:,np.newaxis])/np.mean(hdr)
-        y = np.mean(hdr * np.arange(hdr.shape[1])[np.newaxis,:])/np.mean(hdr)
-        dx2 = np.mean(hdr * ((np.arange(hdr.shape[0])-x)**2)[:,np.newaxis])/np.mean(hdr)
-        dy2 = np.mean(hdr * ((np.arange(hdr.shape[1])-y)**2)[np.newaxis,:])/np.mean(hdr)
-        sd = np.sqrt(dx2+dy2)
-        return 1/sd
-    def average_fn(f, n):
-        return lambda: np.mean([f() for i in range(n)])
-    merit_function = lambda: np.mean([beam_sd() for i in range(3)])
-    
-    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.5, modes=[1])
-    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.3, modes=[0,1,2])
-    for dz in [0.2,0.15,0.1,0.07]:
-        zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=dz)
-    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
-    zernike_coefficients = optimise_aberration_correction(slm, 
-                                    cam, zernike_coefficients, merit_function, 
-                                    dz=0.05)
+# Analysis of the intensity distribution on the SLM
+# NB slmsize is set at 6.9mm for the CC SLM
+slm_size = 6.9
+initial_r = 1.9
+N = res.shape[0]
+x = (np.arange(N)-(N-1)/2.0)/N * slm_size #centres of apertures
+gaussian = np.exp(-x**2/initial_r**2)
+gaussian /= np.mean(gaussian)
+f, axes = plt.subplots(1,2)
+# plot the data and a Gaussian fit
+for data, ax in zip([res[:,:,2], res[:,:,2].T], axes):
+    for i in range(N):
+        ax.plot(x, data[:,i], '+', color=plt.cm.gist_rainbow(float(i)/N))
+        m = np.polyfit(gaussian, data[:,i], 1)
+        ax.plot(x, gaussian*m[0]+m[1], '-', color=plt.cm.gist_rainbow(float(i)/N))
+# plot the data against the Gaussian
+f, axes = plt.subplots(1,2)
+for data, ax in zip([res[:,:,2], res[:,:,2].T], axes):
+    for i in range(N):
+        ax.plot(gaussian, data[:,i], '-+', color=plt.cm.gist_rainbow(float(i)/N))
+
+# plot the data vs r
+r = np.sqrt(x[:,np.newaxis]**2 + x[np.newaxis,:]**2)
+f, ax = plt.subplots(1,1)
+ax.plot(r.flatten(), res[:,:,2].flatten(), '.')
+
+# find the centroid
+plt.figure()
+s=slm_size/2.0
+plt.imshow(res[:,:,2],extent=(-s,s,-s,s))
+for thresh in [0.0,0.1,0.2,0.5,0.9]:
+    I = res[:,:,2].copy()
+    I /= np.max(I)
+    I -= thresh
+    I[I<0] = 0
+    cx = np.sum(x[:,np.newaxis]*I)/np.sum(I)
+    cy = np.sum(x[np.newaxis,:]*I)/np.sum(I)
+    hide = plt.plot(cy,cx,'+')
+    print "found centroid at {}, {} with threshold {}".format(cx, cy, thresh)
+
+# pick the right values for cx and cy...
+
+# plot the data vs r
+r = np.sqrt((x[:,np.newaxis]-cx)**2 + (x[np.newaxis,:]-cy)**2)
+f, ax = plt.subplots(1,1)
+ax.plot(r.flatten(), res[:,:,2].flatten(), '.')
+
+radii = r.flatten()
+I = res[:,:,2].flatten()/I.max()*10
+from scipy.interpolate import UnivariateSpline
+spl = UnivariateSpline(np.concatenate([radii,-radii]), np.tile(I,2))
+rr = np.linspace(0,slm_size/np.sqrt(2),100)
+plt.plot(rr,spl(rr))
+plt.plot(radii,I,'.')
+
+slm.centre=(cx,cy)
+slm.radial_blaze_function = np.ones(384)
+inner_edge_i = 1500//18
+sd = 400/18.0
+nrest = 384 - inner_edge_i
+radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
+                                        np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
+slm.radial_blaze_function = radial_blaze_function
+"""
+"""
+# Optimise SLM for aberrations with modal wavefront sensor
+zernike_coefficients = np.zeros(12)
+slm.zernike_coefficients = zernike_coefficients
+slm.make_spots([test_spot + [0,0,0.5,0]])
+slm.update_gaussian_to_tophat(1900,1, distance=distance)
+dim_slm(1)
+dim_slm(0.75)
+dim_slm(0.5)
+dim_slm(0.2)
+dim_slm(0.1)
+cam.exposure=-2
+def brightest_hdr():
+    hdr = snap()
+    for i in range(4):
+        hdr += snap()
+    hdr /= 5
+    return np.max(scipy.ndimage.uniform_filter(hdr, 17))
+def brightest_g():
+    time.sleep(0.1)
+    cam.color_image()
+    img = cam.color_image()[...,0]
+    avg = np.zeros(shape = img.shape, dtype=np.float)
+    for i in range(4):
+        avg += cam.color_image()[...,1]
+    avg /= 4
+    return np.max(scipy.ndimage.uniform_filter(avg, 17))
+def beam_sd():
+    cam.color_image()
+    time.sleep(0.1)
+    hdr = snap()
+    x = np.mean(hdr * np.arange(hdr.shape[0])[:,np.newaxis])/np.mean(hdr)
+    y = np.mean(hdr * np.arange(hdr.shape[1])[np.newaxis,:])/np.mean(hdr)
+    dx2 = np.mean(hdr * ((np.arange(hdr.shape[0])-x)**2)[:,np.newaxis])/np.mean(hdr)
+    dy2 = np.mean(hdr * ((np.arange(hdr.shape[1])-y)**2)[np.newaxis,:])/np.mean(hdr)
+    sd = np.sqrt(dx2+dy2)
+    return 1/sd
+def average_fn(f, n):
+    return lambda: np.mean([f() for i in range(n)])
+merit_function = lambda: np.mean([beam_sd() for i in range(3)])
+
+zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.5, modes=[1])
+zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.3, modes=[0,1,2])
+for dz in [0.2,0.15,0.1,0.07]:
+    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=dz)
+zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
+zernike_coefficients = optimise_aberration_correction(slm, 
+                                cam, zernike_coefficients, merit_function, 
+                                dz=0.5)
+zernike_coefficients = optimise_aberration_correction(slm, 
+                                cam, zernike_coefficients, merit_function, 
+                                dz=0.1)
+nplab.current_datafile().create_dataset("spot_image_%d",data=cam.color_image(),attrs={"zernike_coefficients":zernike_coefficients})
+
 """
 
 """
-    # Find the proper centre of the SLM
-    slm.update_gaussian_to_tophat(2000,1, distance=2050e3)
-    cam.exposure=-2
-    spot = [-20,10,0,1]
-    N = 10
-    slm.make_spots([spot + [0,0,0.5 * 1.5/N,0]])
-    intensity = beam_profile_on_SLM(slm, cam, spot, N, overlap=0.5)
-    centroid = np.array(scipy.ndimage.measurements.center_of_mass(intensity))
-    actual_centre = (centroid+0.5)/float(N)
-    #
-    plt.ion()
-    plt.figure()
-    plt.imshow(intensity)
-    plt.figure()
-    for i in range(10):
-        plt.plot(intensity[:,i])
-    plt.figure()
-    for i in range(10):
-        plt.plot(intensity[i,:])
-"""
+# Really thorough optimisation of defocus
+# Start with a visible, nicely-focused spot
+slm.make_spots([test_spot + [0,0,0.5,0]])
+slm.update_gaussian_to_tophat(1900,1, distance=distance)
+focus_stack(50,5)
 
-"""
-    # Really thorough optimisation of defocus
-    slm.update_gaussian_to_tophat(2000,1500, distance=2050e3)
-    cam.exposure = -2
-    N = 30
-    zernike_coefficients = np.zeros(12)
-    img = cam.color_image()[:,:,2]
-    focus_stack = np.zeros((N,)+img.shape, dtype=img.dtype)
-    for i, d in enumerate(np.linspace(-3,3,N)):
-        z = zernike_coefficients.copy()
-        z[1] = d
-        slm.zernike_coefficients = z
-        time.sleep(0.1)
-        hide = cam.color_image()
-        time.sleep(0.1)
-        focus_stack[i,:,:] = cam.color_image()[:,:,2]
-    plt.figure()
-    plt.imshow(focus_stack[:,240,:],aspect="auto")
 """
 """
 # Scan through a parameter, plotting sections of the beam
