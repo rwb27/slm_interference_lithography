@@ -202,11 +202,9 @@ if __name__ == '__main__':
     slm.blazing_function = blazing_function
     known_good_zernike = np.array([ 0.1 ,  0.75,  0.5 ,  0.  , -0.55,  0.45,  
                                    0.5 ,  0.5 ,  0.5 , -0.75,  0.05, -0.45])
-    slm.zernike_coefficients = np.zeros(12) #known_good_zernike
-    slm.update_gaussian_to_tophat(1900,1, distance=2900e3)
-    slm.update_gaussian_to_tophat(1900,1000, distance=2900e3)
-    slm.update_gaussian_to_tophat(1900,2000, distance=2900e3)
-    slm.update_gaussian_to_tophat(1900,3000, distance=2900e3)
+    slm.zernike_coefficients = known_good_zernike
+    distance = 2900e3
+    slm.update_gaussian_to_tophat(1900,3000, distance=distance)
     slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
     shutter.open_shutter()
     guis = show_guis([shutter, cam], block=False)
@@ -298,8 +296,10 @@ plt.plot(radii,I,'.')
 
 slm.centre=(cx,cy)
 slm.radial_blaze_function = np.ones(384)
-inner_edge_i = 1500//18
+inner_edge_i = 1500//18 #bad
 sd = 400/18.0
+inner_edge_i = 1000//18 #good
+sd = 1000/18.0
 nrest = 384 - inner_edge_i
 radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
