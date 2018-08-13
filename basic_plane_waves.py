@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Dec 01 12:04:12 2014
+Created on Thu May 03 11:42:09 2018
 
-@author: Richard
+@author: kh302
 """
 
 import numpy as np
 from opengl_holograms import OpenGLShaderWindow, UniformProperty
-
-RADIAL_ARRAY_LENGTH = 384
-
 # This is a big string constant that actually renders the hologram.  See below
 # for the useful Python code that you might want to use...
 IL_SHADER_SOURCE = """
@@ -17,13 +14,11 @@ uniform vec4 spots[100];
 uniform int n;
 uniform float blazing[32];
 uniform float zernikeCoefficients[12];
-uniform float radialPhase["""+str(RADIAL_ARRAY_LENGTH)+"""];
-uniform float radialPhaseDr = 0.009 * 2.0;
-uniform float radialBlaze["""+str(RADIAL_ARRAY_LENGTH)+"""];
+
 const float k=15700; //units of mm-1
 const float f=3500.0; //mm
-const vec2 slmsize=vec2(6.9,6.9); //size of SLM
-uniform vec2 slmcentre=vec2(0.5,0.5); //centre of SLM
+const vec2 slmsize=vec2(6.9,6.9); //size of SLM in mm
+uniform vec2 slmcentre=vec2(0.5,0.5); //centre of SLM in units of 0 to 1
 const float pi = 3.141;
 
 float wrap2pi(float phase){
@@ -45,9 +40,7 @@ float apply_LUT(float phase){
 }
 
 float zernikeAberration(){
-//this function is exactly the same as zernikeCombination, except that it uses a uniform
-//called zernikeCoefficients as its argument.  This avoids copying the array = more efficient.
-  //takes a 12-element array of coefficients, and returns a weighted sum
+  //takes a 12-element uniform array of coefficients, and returns a weighted sum
   //of Zernike modes.  This should now be THE way of generating aberration
   //corrections from Zernikes...
   float x = 2.0*gl_TexCoord[0].x - 1.0;
@@ -69,25 +62,10 @@ float zernikeAberration(){
   return a;
 }
 
-float radialPhaseFunction(vec2 uv){
-  //calculate a radially-symmetric phase function from the uniform radialPhase
-  float r = sqrt(dot(uv,uv));
-  int index = int(floor(r/radialPhaseDr));
-  float alpha = fract(r/radialPhaseDr);
-  return mix(radialPhase[index], radialPhase[index+1], alpha);
-}
-float radialBlazeFunction(vec2 uv){
-  //calculate a radially-symmetric phase function from the uniform radialPhase
-  float r = sqrt(dot(uv,uv));
-  int index = int(floor(r/radialPhaseDr));
-  float alpha = fract(r/radialPhaseDr);
-  return mix(radialBlaze[index], radialBlaze[index+1], alpha);
-}
-
-void main(){ // basic gratings and lenses for a single spot
-  vec2 uv = (gl_TexCoord[0].xy - slmcentre)*slmsize;
-  vec3 pos = vec3(k*uv/f, -k*dot(uv,uv)/(2.0*f*f));
-  float basephase = zernikeAberration() + radialPhaseFunction(uv);
+void main(){ // basic gratings and lenses
+  vec2 uv = (gl_TexCoord[0].xy - slmcentre)*slmsize; // position relative to SLM centre in mm
+  vec3 pos = vec3(k*uv/f, -k*dot(uv,uv)/(2.0*f*f));  // scale by k/f and add radial coordinate
+  float basephase = zernikeAberration();
   float phase, real=0.0, imag=0.0;
   for(int i; i<2*n; i+=2){
     if(length(uv/slmsize - spots[i+1].xy) < spots[i+1][2]){
@@ -100,9 +78,7 @@ void main(){ // basic gratings and lenses for a single spot
   
   phase = atan(real, imag);
   float g = apply_LUT(phase);
-  g = (g-0.5) * radialBlazeFunction(uv) + 0.5;
   gl_FragColor=vec4(g,g,g,1.0);
-  //gl_FragColor=vec4(1,1,0,1);
 }
 """
 
@@ -123,8 +99,6 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         self.centre = [0.5, 0.5]
         self.blazing_function = np.linspace(0,1,32)
         self.zernike_coefficients = np.zeros(12)
-        self.disable_gaussian_to_tophat()
-        self.radial_blaze_function = np.ones(RADIAL_ARRAY_LENGTH)
 
     def make_spots(self, spots):
         """Use the gratings-and-lenses algorithm to make a number of spots.
@@ -156,75 +130,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     centre = UniformProperty(6, max_length=2)
     blazing_function = UniformProperty(2, max_length=32)
     zernike_coefficients = UniformProperty(3, max_length=12)
-    radial_phase_function = UniformProperty(4, max_length=384)
-    radial_blaze_function = UniformProperty(6, max_length=384)
 
-    def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False):
-        """Calculate a radial phase function to re-map from gaussian to top-hat.
-        
-        N: number of points to calculate
-        dr: radial spacing between points
-        wavelength: wavelength of the light
-        initial_waist: 1/e radius of starting beam
-        target_radius: size of target top-hat beam
-        propagation_distance: distance from SLM to target plane
-        
-        Units can be anything - but should be self-consistent.  Microns are good.
-        """
-        k = np.pi*2/wavelength
-        # Next, calculate the phase shift as a function of radius
-        def cumulative_I_gaussian(r, w):
-            """The fraction of a 2D Gaussian contained within a given radius.
-            
-            The equation of the underlying gaussian is np.exp(-r**2/(w**2))
-            remember d/dx exp(-r^2/w^2) = exp(-r^2/w^2) * (-2r/w^2)
-            so int[0,R] e**(-r**2/w**2) r dr
-            = (2r/w^2) * [1 - exp(-r^2/w^2)]
-            The normalisation takes care of the 2r/w^2 term.
-            """
-            return 1 - np.exp(-r**2/(w**2)) #NB there's no 2 as it's *intensity*
-        def cumulative_I_tophat(r, r_beam):
-            """Fraction of a top-hat contained within a given radius."""
-            if r<r_beam:
-                return (r/r_beam)**2
-            else:
-                return 1
-        def inverse_cumulative_I_tophat(I_cum, r_beam):
-            """Radius at which a given fraction of the beam is enclosed."""
-            return np.sqrt(I_cum) * r_beam
-        
-        phase_shift = np.zeros((N)) #array the right length
-        tilt = np.zeros(len(phase_shift)-1)
-        for i in range(len(tilt)):
-            r = (i+0.5)*dr
-            target_r = inverse_cumulative_I_tophat(
-                            cumulative_I_gaussian(r, initial_waist),
-                            target_radius)
-            tilt[i] = (target_r-r)/propagation_distance
-        for i in range(1,len(phase_shift)):
-            #this is just a lens
-            phase_shift[i] = phase_shift[i-1] + tilt[i-1] * k * dr
-        if wrap:
-            return ((phase_shift + np.pi) % (2 * np.pi)) - np.pi
-        else:
-            return phase_shift
-        
-    def update_gaussian_to_tophat(self, initial_r, final_r, distance=750e3):
-        """Update the parameters used to map gaussian -> top hat"""
-        phase = self.gaussian_to_tophat_phase(384, #length
-                                              9*2, #pixel size/um
-                                              0.4, #wavelength/um
-                                              initial_r, #initial 1/e radius
-                                              final_r, #final radius
-                                              distance, #propagation distance
-                                              wrap=False) #don't phase-wrap
-        self.set_uniform(4, phase)
-
-    def disable_gaussian_to_tophat(self):
-        """Set the radial phase function to zero"""
-        #self.set_uniform(4, np.zeros((384,)))
-        self.radial_phase_function = np.zeros((384,))
-    
     def make_shack_hartmann(self, N, width, x=0, y=0, z=0, ref=False):
         """Make a square-array shack-hartmann sensor.
         
@@ -247,6 +153,8 @@ if __name__ == "__main__":
        255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
     
     slm.blazing_function = blazing_function
-    slm.update_gaussian_to_tophat(1900*3/2,3000, distance=3500e3)
-    slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
-   
+    slm.make_spots([[10,-10,0,1],[-10,-10,0,1]])
+    slm.make_spots([[10,-10,0,1],[-10,-10,0,1],[2,-15,0,1]])
+    slm.make_spots([[0,-10,0,1]])
+    slm.make_spots([[-10,0,0,1],[-40,0,0,1]])
+    

@@ -87,6 +87,10 @@ ENV/
 # Rope project settings
 .ropeproject
 
+# HDF5 data files
+*.h5
+*.hdf5
+
 # =========================
 # Operating System Files
 # =========================
