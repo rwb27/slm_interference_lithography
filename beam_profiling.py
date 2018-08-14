@@ -9,6 +9,7 @@ from nplab.instrument import Instrument
 from nplab.instrument.light_sources.ondax_laser import OndaxLaser
 from nplab.instrument.shutter.southampton_custom import ILShutter
 from nplab.instrument.camera.opencv import OpenCVCamera
+from nplab.instrument.camera.thorlabs_uc480 import ThorLabsCamera
 from slm_interference_lithography import VeryCleverBeamsplitter
 from nplab.utils.gui import show_guis
 import numpy as np
@@ -175,10 +176,7 @@ def focus_stack(N, dz, snap=None):
         z = zernike_coefficients.copy()
         z[1] += d
         slm.zernike_coefficients = z
-        time.sleep(0.1)
-        hide = cam.color_image()
-        time.sleep(0.1)
-        focus_stack[i,:,:] = cam.color_image()[:,:,2]
+        focus_stack[i,:,:] = snap()
     slm.zernike_coefficients=zernike_coefficients
     plt.figure()
     plt.imshow(focus_stack[:,240,:],aspect="auto")
@@ -189,10 +187,10 @@ def focus_stack(N, dz, snap=None):
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
-    shutter = ILShutter("COM1")
+    #shutter = ILShutter("COM1")
     #laser = OndaxLaser("COM4")
-    cam = OpenCVCamera()
-    slm.move_hologram(-1024,0,1024,768)
+    cam = ThorLabsCamera()
+    slm.move_hologram(1920,0,1024,768)
     # set uniform values so it has a blazing function and no aberration correction
     blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
        139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
@@ -203,30 +201,43 @@ if __name__ == '__main__':
     known_good_zernike = np.array([ 0.1 ,  0.75,  0.5 ,  0.  , -0.55,  0.45,  
                                    0.5 ,  0.5 ,  0.5 , -0.75,  0.05, -0.45])
     slm.zernike_coefficients = known_good_zernike
-    distance = 2900e3
+    slm.zernike_coefficients = np.zeros(12)
+    distance = 2325e3
     slm.update_gaussian_to_tophat(1900,3000, distance=distance)
-    slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
-    shutter.open_shutter()
-    guis = show_guis([shutter, cam], block=False)
+    slm.update_gaussian_to_tophat(1900,1, distance=distance)
+    slm.disable_gaussian_to_tophat()
+    slm.make_spots([[20,10,0,1],[-20,10,0,1]])
+    test_spot = [-20,10,0,1]
+    slm.make_spots([test_spot])
+    #shutter.open_shutter()
+    #guis = show_guis([shutter, cam], block=False)
+    def snap():
+        cam.gray_image()
+        time.sleep(0.1)
+        cam.gray_image()
+        return cam.gray_image()
+        
     df = nplab.current_datafile()
 
 """
+# These variables need to be defined to match the geometry of your set-up
 test_spot = [20,-10,0,1];
 distance = 2900e3
 
-# Calibrate HDR processing
-slm.make_spots([test_spot + [0,0,0.5,0]])
+# Calibrate HDR processing (not needed unless you're 
+# struggling, snap is already defined.)
+slm.make_spots([test_spot + [0,0,0.075,0]])
 slm.update_gaussian_to_tophat(1900,1, distance=distance)
 ## TURN LIGHTS OFF!
-cam.exposure=-2
-snap = calibrate_hdr()
+#cam.exposure=-2
+#snap = calibrate_hdr()
 
 # Sequential Shack-Hartmann sensor
-slm.make_spots([[20,-10,0,1,0,0,0.075,0]])
+slm.make_spots([test_spot + [0,0,0.075,0]])
 zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
-dim_slm(1)
-cam.exposure=-5
+#dim_slm(1)
+#cam.exposure=-5
 res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 10, overlap=0.5)
 plot_shack_hartmann(res)
 
@@ -309,14 +320,15 @@ slm.radial_blaze_function = radial_blaze_function
 # Optimise SLM for aberrations with modal wavefront sensor
 zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
-slm.make_spots([test_spot + [0,0,0.5,0]])
+#slm.make_spots([test_spot + [0,0,0.5,0]])
+slm.make_spots([test_spot])
 slm.update_gaussian_to_tophat(1900,1, distance=distance)
-dim_slm(1)
-dim_slm(0.75)
-dim_slm(0.5)
-dim_slm(0.2)
-dim_slm(0.1)
-cam.exposure=-2
+#dim_slm(1)
+#dim_slm(0.75)
+#dim_slm(0.5)
+#dim_slm(0.2)
+#dim_slm(0.1)
+#cam.exposure=-2
 def brightest_hdr():
     hdr = snap()
     for i in range(4):
@@ -346,10 +358,13 @@ def average_fn(f, n):
     return lambda: np.mean([f() for i in range(n)])
 merit_function = lambda: np.mean([beam_sd() for i in range(3)])
 
-zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.5, modes=[1])
-zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=0.3, modes=[0,1,2])
+# Start by autofocusing (optimising mode 2)
+zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.5, modes=[1])
+zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.1, modes=[1])
+zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.3, modes=[0,1,2])
 for dz in [0.2,0.15,0.1,0.07]:
-    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_g, dz=dz)
+    print "step size: {}".format(dz)
+    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=dz)
 zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
 zernike_coefficients = optimise_aberration_correction(slm, 
                                 cam, zernike_coefficients, merit_function, 
@@ -366,7 +381,7 @@ nplab.current_datafile().create_dataset("spot_image_%d",data=cam.color_image(),a
 # Start with a visible, nicely-focused spot
 slm.make_spots([test_spot + [0,0,0.5,0]])
 slm.update_gaussian_to_tophat(1900,1, distance=distance)
-focus_stack(50,5)
+focus_stack(50,5, snap=snap)
 
 """
 """
