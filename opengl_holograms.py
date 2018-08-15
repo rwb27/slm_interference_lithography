@@ -96,6 +96,18 @@ class OpenGLShaderWindow(object):
         self.query("<data>\n"
                    "<window_rect>{0},{1},{2},{3}</window_rect>\n"
                    "</data>\n".format(x, y, w, h))
+    def set_aspect(self, aspect):
+        """Set the aspect ratio of the hologram
+        
+        By default, the hologram occupies the central square of the window.  
+        This corresponds to an aspect of 1.  Use a value other than 1 to change
+        the shape of the hologram region.  NB gl_TexCoord still goes from 0 to 
+        1 across the hologram (i.e. if aspect is not 1, gl_TexCoord scales 
+        differently in X and Y)
+        """
+        self.query("<data>\n"
+                   "<aspect>{}</aspect>\n"
+                   "</data>\n".format(aspect))
                    
     def set_uniform(self, uniform_id, value):
         """Set the value of a uniform variable.
