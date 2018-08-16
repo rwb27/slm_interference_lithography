@@ -1,5 +1,4 @@
 import pyqtgraph as pg
-import nplab.instrument.camera
 import numpy as np
 
 class POIManager(object):
@@ -82,7 +81,7 @@ class POIManager(object):
 		return self._box_size
 	@box_size.setter
 	def box_size(self, new_size):
-		assert len(newsize)==2, "Box size is a 2-element tuple"
+		assert len(new_size)==2, "Box size is a 2-element tuple"
 		self._box_size = new_size
 		self._poi_list_updated()
 		

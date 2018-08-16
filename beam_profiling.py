@@ -20,6 +20,7 @@ from rgb_to_hdr import calibrate_hdr_from_rgb, hdr_from_rgb, fit_channels
 import nplab.utils.gui
 import nplab
 from nplab.utils.array_with_attrs import ArrayWithAttrs
+from measure_orders import POIManager, sum_rois
 
 def beam_profile_on_SLM(slm, cam, spot, N, overlap=0.0):
     """Scan a spot over the SLM, recording intensities as we go"""
