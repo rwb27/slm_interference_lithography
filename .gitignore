@@ -141,3 +141,9 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# Data
+/BNS/
+/Hamatsudata/
+/data/
+*.h5

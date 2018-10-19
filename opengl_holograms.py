@@ -15,7 +15,7 @@ import socket
 
 #from nplab.instrument import Instrument
 class UniformProperty(object):
-    def __init__(self, uniform_id, max_length=-1):
+    def __init__(self, uniform_id, max_length=-1, simplify_list=True, write_only=False):
         """Create a property-like object to set the value of a uniform variable
         
         Arguments:
@@ -26,11 +26,18 @@ class UniformProperty(object):
         max_length : int (optional)
             If supplied, truncate the number of values to be no more than a
             set number.  If -1 or 0, ignore it.
+        simplify_list : bool (optional, default True)
+            If this is true, when the value is queried, lists of length
+            one will be returned as the element (i.e. not a list)
+        write_only : bool (optional, default False)
+            If this is set to true, reading the property will raise an error.
         """
         super(UniformProperty, self).__init__()
         self.__doc__ = """Set the uniform variable's value"""
         self.uniform_id = uniform_id
         self.max_length = max_length
+        self.last_value = None
+        self.simplify_list = simplify_list
         
     def __set__(self, obj, value):
         try:
@@ -40,6 +47,18 @@ class UniformProperty(object):
             #if the object wasn't iterable we end up here...
             value = [value]
         obj.set_uniform(self.uniform_id, value)
+        self.last_value = value
+        
+    def __get__(self, obj):
+        if self.write_only:
+            raise AttributeError("This property is write-only")
+        else:
+            try:
+                if self.simplify_list:
+                    if len(self.last_value) == 1:
+                        return self.last_value[0]
+                else:
+                    return self.last_value
 
 class OpenGLShaderWindow(object):
     """Python control interface to the Red Tweezers hologram engine.

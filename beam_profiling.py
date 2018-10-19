@@ -177,10 +177,12 @@ def focus_stack(N, dz, snap=None):
         z = zernike_coefficients.copy()
         z[1] += d
         slm.zernike_coefficients = z
-        focus_stack[i,:,:] = snap()
+        #focus_stack[i,:,:] = snap()
+        focus_stack[i,:] = snap()
     slm.zernike_coefficients=zernike_coefficients
     plt.figure()
-    plt.imshow(focus_stack[:,240,:],aspect="auto")
+    #plt.imshow(focus_stack[:,240,:],aspect="auto")
+    plt.imshow(focus_stack[:,512],aspect="auto")
     focus_stack.attrs["dz"]=dz
     focus_stack.attrs["zernike_coefficients"]=zernike_coefficients
     dset = nplab.current_datafile().create_dataset("zstack_%d",data=focus_stack)
@@ -195,9 +197,14 @@ if __name__ == '__main__':
     #shutter = ILShutter("COM1")
     #laser = OndaxLaser("COM4")
     cam = ThorLabsCamera()
-    slm.move_hologram(-800,0,800,600)
+    slm.move_hologram(1920,0,1024,768)
+    #previously
+    #slm.move_hologram(-800,0,800,600)
     # set uniform values so it has a blazing function and no aberration correction
-    blazing_function = np.load("hamamatsu_633_lut.npz")['grays']
+    blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
+       139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
+       255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
+    #blazing_function = np.load("hamamatsu_633_lut.npz")['grays']
     def dim_slm(dimming):
         slm.blazing_function = (blazing_function - 0.5)*dimming + 0.5
     slm.blazing_function = blazing_function
@@ -224,10 +231,11 @@ if __name__ == '__main__':
 test_spot = [20,-10,0,1];
 distance = 2900e3
 
+
 # Calibrate HDR processing (not needed unless you're 
 # struggling, snap is already defined.)
 slm.make_spots([test_spot + [0,0,0.075,0]])
-slm.update_gaussian_to_tophat(1900,1, distance=distance)
+#slm.update_gaussian_to_tophat(1900,1, distance=distance)
 ## TURN LIGHTS OFF!
 #cam.exposure=-2
 #snap = calibrate_hdr()
@@ -247,7 +255,7 @@ flat = modes[12]
 f, axes = plt.subplots(3,4)
 axes_flat = [axes[i,j] for i in range(3) for j in range(4)]
 for m, ax in zip(modes[:12], axes_flat):
-    plot_sh_shifts(ax, m - flat, discard_edges=1)
+    plot_sh_shifts(ax, m, discard_edges=1)
 """
 """
 # Analysis of the intensity distribution on the SLM
@@ -317,10 +325,13 @@ radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
 slm.radial_blaze_function = radial_blaze_function
 """
 """
+
+
+
 # Optimise SLM for aberrations with modal wavefront sensor
 zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
-#slm.make_spots([test_spot + [0,0,0.5,0]])
+#slm.make_spots([test_spot + [0,0,0.75,0]])
 slm.make_spots([test_spot])
 slm.update_gaussian_to_tophat(1900,1, distance=distance)
 #dim_slm(1)
@@ -337,15 +348,18 @@ def brightest_hdr():
     return np.max(scipy.ndimage.uniform_filter(hdr, 17))
 def brightest_g():
     time.sleep(0.1)
-    cam.color_image()
-    img = cam.color_image()[...,0]
+    #cam.color_image()
+    hdr = snap()
+    img = hdr[...,0]
+    #img = cam.color_image()[...,0]
     avg = np.zeros(shape = img.shape, dtype=np.float)
     for i in range(4):
-        avg += cam.color_image()[...,1]
+        avg += hdr[...,1]
+        #avg += cam.color_image()[...,1]
     avg /= 4
     return np.max(scipy.ndimage.uniform_filter(avg, 17))
 def beam_sd():
-    cam.color_image()
+    #cam.color_image()
     time.sleep(0.1)
     hdr = snap()
     x = np.mean(hdr * np.arange(hdr.shape[0])[:,np.newaxis])/np.mean(hdr)
@@ -362,7 +376,7 @@ merit_function = lambda: np.mean([beam_sd() for i in range(3)])
 zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.5, modes=[1])
 zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.1, modes=[1])
 zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.3, modes=[0,1,2])
-for dz in [0.2,0.15,0.1,0.07]:
+for dz in [0.5,0.35,0.3,0.2,0.15,0.1,0.07,0.05,0.01]:
     print "step size: {}".format(dz)
     zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=dz)
 zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
@@ -379,24 +393,42 @@ nplab.current_datafile().create_dataset("spot_image_%d",data=cam.color_image(),a
 """
 # Really thorough optimisation of defocus
 # Start with a visible, nicely-focused spot
+test_spot = [20,-10,0,1];
 slm.make_spots([test_spot + [0,0,0.5,0]])
 slm.update_gaussian_to_tophat(1900,1, distance=distance)
+#focus_stack(50,5, snap=snap)
 focus_stack(50,5, snap=snap)
 
 """
 """
 # Scan through a parameter, plotting sections of the beam
-xsection = np.zeros((30,640,3),dtype=np.uint8)
-ysection = np.zeros((xsection.shape[0],480,3),dtype=np.uint8)
-rs = np.linspace(-5,5,xsection.shape[0])
+#changed this section as camera changed
+img = snap()
+imgsize = np.shape(img)
+width = int(imgsize[0])/10
+    
+xsection = np.zeros((width,int(imgsize[1])),dtype=np.uint8)
+ysection = np.zeros((xsection.shape[0],int(imgsize[0])),dtype=np.uint8)
+#rs = np.linspace(-5,5,xsection.shape[0])
+rs = np.linspace(-100,100,xsection.shape[0])
 for i, r in enumerate(rs):
     slm.zernike_coefficients = [-1.3,0.8,r,0,0,0,0,0,0,0,0,0,]
     time.sleep(0.1)
-    img = cam.color_image()
-    img = cam.color_image()
-    xsection[i,:,:] = np.mean(img[230:250,:,:], axis=0)
-    ysection[i,:,:] = np.mean(img[:,310:330,:], axis=1)
+    #img = cam.color_image()
+    img = snap()
+    #plt.imshow(img)
+    #raw_input('Press <ENTER> to continue')
+    imgsize = np.shape(img)
+    width = int(imgsize[0])/10
+    ximgcentre = int(imgsize[0])/2
+    yimgcentre = int(imgsize[1])/2
+    xsection[i,:] = np.mean(img[(ximgcentre-width):(ximgcentre+width),:], axis=0)
+    #previously 230 and 250
+    #ysection[i,:,:] = np.mean(img[:,310:330,:], axis=1)
+    ysection[i,:] = np.mean(img[:,(yimgcentre-width):(yimgcentre+width)], axis=1)
 f, axes = plt.subplots(1,2)
 axes[0].imshow(xsection,aspect='auto',extent = (0,640,rs.max(), rs.min()))
 axes[1].imshow(ysection,aspect='auto',extent = (0,480,rs.max(), rs.min()))
+
+    
 """

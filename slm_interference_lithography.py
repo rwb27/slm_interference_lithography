@@ -20,9 +20,9 @@ uniform float zernikeCoefficients[12];
 uniform float radialPhase["""+str(RADIAL_ARRAY_LENGTH)+"""];
 uniform float radialPhaseDr = 0.009 * 2.0;
 uniform float radialBlaze["""+str(RADIAL_ARRAY_LENGTH)+"""];
-const float k=15700; //units of mm-1
-const float f=3500.0; //mm
-const vec2 slmsize=vec2(6.9,6.9); //size of SLM
+uniform float k=15700; //units of mm-1
+uniform float f=3500.0; //mm
+uniform vec2 slmsize=vec2(6.9,6.9); //size of SLM
 uniform vec2 slmcentre=vec2(0.5,0.5); //centre of SLM
 const float pi = 3.141;
 
@@ -116,6 +116,8 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     * rotationally-symmetric beam shaping
     * aberration correction
     """
+    
+    
     def __init__(self, **kwargs):
         """Create a hologram generator for interference lithography."""
         super(VeryCleverBeamsplitter, self).__init__(**kwargs)
@@ -153,11 +155,15 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         self.set_uniform(0, np.reshape(spots,spots.shape[0]*spots.shape[1]))
         self.set_uniform(1, spots.shape[0])
         
-    centre = UniformProperty(6, max_length=2)
     blazing_function = UniformProperty(2, max_length=32)
     zernike_coefficients = UniformProperty(3, max_length=12)
-    radial_phase_function = UniformProperty(4, max_length=384)
-    radial_blaze_function = UniformProperty(6, max_length=384)
+    radial_phase_function = UniformProperty(4, max_length=RADIAL_ARRAY_LENGTH)
+    radial_phase_dr = UniformProperty(5, max_length=1)
+    radial_blaze_function = UniformProperty(6, max_length=RADIAL_ARRAY_LENGTH)
+    wavevector = UniformProperty(7, max_length=1) #k
+    focal_length = UniformProperty(8, max_length=1) #f
+    centre = UniformProperty(9, max_length=2)
+    
 
     def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False):
         """Calculate a radial phase function to re-map from gaussian to top-hat.
@@ -209,21 +215,22 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         else:
             return phase_shift
         
-    def update_gaussian_to_tophat(self, initial_r, final_r, distance=750e3):
+    def update_gaussian_to_tophat(self, initial_r, final_r, distance=None):
+        if distance is None:
+            distance =  self.focal_length
         """Update the parameters used to map gaussian -> top hat"""
-        phase = self.gaussian_to_tophat_phase(384, #length
-                                              9*2, #pixel size/um
-                                              0.4, #wavelength/um
+        self.radial_phase = self.gaussian_to_tophat_phase(RADIAL_ARRAY_LENGTH, #length
+                                              self.radial_phase_dr, #pixel size/um
+                                              1.0/self.wavevector, #wavelength/um
                                               initial_r, #initial 1/e radius
                                               final_r, #final radius
                                               distance, #propagation distance
                                               wrap=False) #don't phase-wrap
-        self.set_uniform(4, phase)
 
     def disable_gaussian_to_tophat(self):
         """Set the radial phase function to zero"""
         #self.set_uniform(4, np.zeros((384,)))
-        self.radial_phase_function = np.zeros((384,))
+        self.radial_phase_function = np.zeros((RADIAL_ARRAY_LENGTH,))
     
     def make_shack_hartmann(self, N, width, x=0, y=0, z=0, ref=False):
         """Make a square-array shack-hartmann sensor.
@@ -248,5 +255,9 @@ if __name__ == "__main__":
     
     slm.blazing_function = blazing_function
     slm.update_gaussian_to_tophat(1900*3/2,3000, distance=3500e3)
+    slm.zernike_coefficients = np.zeros(12)
+    slm.wavevector = 1e6/633.0
+    slm.focal_length = 3500e3
+    slm.centre = [0.5, 0.5]
     slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
    
