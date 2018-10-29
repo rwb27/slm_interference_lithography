@@ -123,8 +123,12 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         super(VeryCleverBeamsplitter, self).__init__(**kwargs)
         self.shader_source = IL_SHADER_SOURCE
         self.centre = [0.5, 0.5]
+        self.active_area = [6.9, 6.9]
         self.blazing_function = np.linspace(0,1,32)
         self.zernike_coefficients = np.zeros(12)
+        self.radial_phase_dr = 0.009*2
+        self.wavevector = 15700 # 2pi/wavelength with wavelength in mm
+        self.focal_length = 3500
         self.disable_gaussian_to_tophat()
         self.radial_blaze_function = np.ones(RADIAL_ARRAY_LENGTH)
 
@@ -162,7 +166,8 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     radial_blaze_function = UniformProperty(6, max_length=RADIAL_ARRAY_LENGTH)
     wavevector = UniformProperty(7, max_length=1) #k
     focal_length = UniformProperty(8, max_length=1) #f
-    centre = UniformProperty(9, max_length=2)
+    active_area = UniformProperty(9, max_length=2)
+    centre = UniformProperty(10, max_length=2)
     
 
     def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False):
@@ -219,9 +224,9 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         if distance is None:
             distance =  self.focal_length
         """Update the parameters used to map gaussian -> top hat"""
-        self.radial_phase = self.gaussian_to_tophat_phase(RADIAL_ARRAY_LENGTH, #length
-                                              self.radial_phase_dr, #pixel size/um
-                                              1.0/self.wavevector, #wavelength/um
+        self.radial_phase_function = self.gaussian_to_tophat_phase(RADIAL_ARRAY_LENGTH, #length
+                                              self.radial_phase_dr, #pixel size/mm
+                                              2*np.pi/float(self.wavevector), #wavelength/mm
                                               initial_r, #initial 1/e radius
                                               final_r, #final radius
                                               distance, #propagation distance
@@ -254,10 +259,10 @@ if __name__ == "__main__":
        255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
     
     slm.blazing_function = blazing_function
-    slm.update_gaussian_to_tophat(1900*3/2,3000, distance=3500e3)
+    slm.update_gaussian_to_tophat(1900*3/2,3000, distance=1900e3)
     slm.zernike_coefficients = np.zeros(12)
-    slm.wavevector = 1e6/633.0
-    slm.focal_length = 3500e3
+    slm.wavevector = 2*np.pi*1e6/633.0
+    slm.focal_length = 3500e3 #3500e3
     slm.centre = [0.5, 0.5]
     slm.make_spots([[20,-10,0,1],[-20,-10,0,1]])
    

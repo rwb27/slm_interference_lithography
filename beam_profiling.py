@@ -173,6 +173,7 @@ def focus_stack(N, dz, snap=None):
         snap = lambda: cam.color_image()[:,:,2]
     img = snap()
     focus_stack = ArrayWithAttrs(np.zeros((N,)+img.shape, dtype=img.dtype))
+    zernike_coefficients = slm.zernike_coefficients
     for i, d in enumerate(np.linspace(-dz,dz,N)):
         z = zernike_coefficients.copy()
         z[1] += d
@@ -188,7 +189,8 @@ def focus_stack(N, dz, snap=None):
     dset = nplab.current_datafile().create_dataset("zstack_%d",data=focus_stack)
     return dset
 
-
+def pause():
+    programPause = raw_input("Press the <ENTER> key to continue...")
     
     
 
@@ -204,11 +206,13 @@ if __name__ == '__main__':
     blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
        139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
        255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
-    #blazing_function = np.load("hamamatsu_633_lut.npz")['grays']
-    def dim_slm(dimming):
-        slm.blazing_function = (blazing_function - 0.5)*dimming + 0.5
     slm.blazing_function = blazing_function
     slm.zernike_coefficients = np.zeros(12)
+    slm.centre = [0.5, 0.5]
+    slm.active_area = [6.9, 6.9]
+    slm.radial_phase_dr = 0.009*2
+    slm.wavevector = 2*np.pi/(633e-9*1e3)
+    slm.focal_length = 3040
     #distance = 2325e3
     #slm.update_gaussian_to_tophat(1900,3000, distance=distance)
     #slm.update_gaussian_to_tophat(1900,1, distance=distance)
@@ -225,28 +229,109 @@ if __name__ == '__main__':
         return cam.gray_image()
         
     df = nplab.current_datafile()
+    
+#    test_spot = [200,-200,0,100]
+#    distance = 3000e3
+#    slm.make_spots([test_spot + [0,0,0.075,0]])
+#    slm.update_gaussian_to_tophat(1900,1, distance=distance)
+#    cam.show_gui()
+#    time.sleep(1)
+#    pause()
+#    zernike_coefficients = np.zeros(12)
+#    slm.zernike_coefficients = zernike_coefficients
+#    print('Sequential Shack Hartmann')
+#    res = sequential_shack_hartmann(slm, snap, test_spot, 10, overlap=0.5)
+#    plot_shack_hartmann(res)
+#    pause()
+#    
+#    modes = measure_modes(slm, snap, [20,10,2050,1], 5, overlap=0)
+#    flat = modes[12]
+#    f, axes = plt.subplots(3,4)
+#    axes_flat = [axes[i,j] for i in range(3) for j in range(4)]
+#    for m, ax in zip(modes[:12], axes_flat):
+#        plot_sh_shifts(ax, m, discard_edges=1)
+#    pause()
+#    
+#    # Analysis of the intensity distribution on the SLM
+#    # NB slmsize is set at 6.9mm for the CC SLM
+#    slm_size = 6.9
+#    initial_r = 1.9
+#    N = res.shape[0]
+#    x = (np.arange(N)-(N-1)/2.0)/N * slm_size #centres of apertures
+#    gaussian = np.exp(-x**2/initial_r**2)
+#    gaussian /= np.mean(gaussian)
+#    f, axes = plt.subplots(1,2)
+#    # plot the data and a Gaussian fit
+#    for data, ax in zip([res[:,:,2], res[:,:,2].T], axes):
+#        for i in range(N):
+#            ax.plot(x, data[:,i], '+', color=plt.cm.gist_rainbow(float(i)/N))
+#            m = np.polyfit(gaussian, data[:,i], 1)
+#            ax.plot(x, gaussian*m[0]+m[1], '-', color=plt.cm.gist_rainbow(float(i)/N))
+#    # plot the data against the Gaussian
+#    f, axes = plt.subplots(1,2)
+#    for data, ax in zip([res[:,:,2], res[:,:,2].T], axes):
+#        for i in range(N):
+#            ax.plot(gaussian, data[:,i], '-+', color=plt.cm.gist_rainbow(float(i)/N))
+#
+#    # plot the data vs r
+#    r = np.sqrt(x[:,np.newaxis]**2 + x[np.newaxis,:]**2)
+#    f, ax = plt.subplots(1,1)
+#    ax.plot(r.flatten(), res[:,:,2].flatten(), '.')
+#
+#    # find the centroid
+#    plt.figure()
+#    s=slm_size/2.0
+#    plt.imshow(res[:,:,2],extent=(-s,s,-s,s))
+#    for thresh in [0.0,0.1,0.2,0.5,0.9]:
+#        I = res[:,:,2].copy()
+#        I /= np.max(I)
+#        I -= thresh
+#        I[I<0] = 0
+#        cx = np.sum(x[:,np.newaxis]*I)/np.sum(I)
+#        cy = np.sum(x[np.newaxis,:]*I)/np.sum(I)
+#        hide = plt.plot(cy,cx,'+')
+#        print "found centroid at {}, {} with threshold {}".format(cx, cy, thresh)
+#
+#    # pick the right values for cx and cy...
+#
+#    # plot the data vs r
+#    r = np.sqrt((x[:,np.newaxis]-cx)**2 + (x[np.newaxis,:]-cy)**2)
+#    f, ax = plt.subplots(1,1)
+#    ax.plot(r.flatten(), res[:,:,2].flatten(), '.')
+#    
+#    radii = r.flatten()
+#    I = res[:,:,2].flatten()/I.max()*10
+#    from scipy.interpolate import UnivariateSpline
+#    #spl = UnivariateSpline(np.concatenate([radii,-radii]), np.tile(I,2))
+#    rr = np.linspace(0,slm_size/np.sqrt(2),100)
+#    #plt.plot(rr,spl(rr))
+#    plt.plot(radii,I,'.')
+#    pause()
+#    
+#    slm.centre=(cx,cy)
+#    slm.radial_blaze_function = np.ones(384)
+#    inner_edge_i = 1500//18 #bad
+#    sd = 400/18.0
+#    inner_edge_i = 1000//18 #good
+#    sd = 1000/18.0
+#    nrest = 384 - inner_edge_i
+#    radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
+#                                        np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
+#    slm.radial_blaze_function = radial_blaze_function #radial blaze function moves spot - change in centre?
+#    cam.show_gui()
+#    time.sleep(1)
+#    pause()
+
 
 """
-# These variables need to be defined to match the geometry of your set-up
-test_spot = [20,-10,0,1];
-distance = 2900e3
-
-
-# Calibrate HDR processing (not needed unless you're 
-# struggling, snap is already defined.)
-slm.make_spots([test_spot + [0,0,0.075,0]])
-#slm.update_gaussian_to_tophat(1900,1, distance=distance)
-## TURN LIGHTS OFF!
-#cam.exposure=-2
-#snap = calibrate_hdr()
-
 # Sequential Shack-Hartmann sensor
-slm.make_spots([test_spot + [0,0,0.075,0]])
-zernike_coefficients = np.zeros(12)
-slm.zernike_coefficients = zernike_coefficients
+slm.update_gaussian_to_tophat(1.9, 0.0001)
+slm.make_spots([test_spot[:4] + [0,0,0.075,0]])
+# Check you can see the spot when you get to here...
+slm.zernike_coefficients = np.zeros(12)
 #dim_slm(1)
 #cam.exposure=-5
-res = sequential_shack_hartmann(slm, snap, [20,-10,0,1], 10, overlap=0.5)
+res = sequential_shack_hartmann(slm, snap, test_spot[:4], 10, overlap=0.5)
 plot_shack_hartmann(res)
 
 # A brutal attempt at modal decomposition (not used)
@@ -313,6 +398,7 @@ rr = np.linspace(0,slm_size/np.sqrt(2),100)
 plt.plot(rr,spl(rr))
 plt.plot(radii,I,'.')
 
+
 slm.centre=(cx,cy)
 slm.radial_blaze_function = np.ones(384)
 inner_edge_i = 1500//18 #bad
@@ -322,7 +408,7 @@ sd = 1000/18.0
 nrest = 384 - inner_edge_i
 radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
-slm.radial_blaze_function = radial_blaze_function
+slm.radial_blaze_function = radial_blaze_function #radial blaze function moves spot - change in centre?
 """
 """
 
@@ -332,8 +418,8 @@ slm.radial_blaze_function = radial_blaze_function
 zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
 #slm.make_spots([test_spot + [0,0,0.75,0]])
-slm.make_spots([test_spot])
-slm.update_gaussian_to_tophat(1900,1, distance=distance)
+#slm.make_spots([test_spot])
+#slm.update_gaussian_to_tophat(1900,1, distance=distance)
 #dim_slm(1)
 #dim_slm(0.75)
 #dim_slm(0.5)
@@ -393,8 +479,8 @@ nplab.current_datafile().create_dataset("spot_image_%d",data=cam.color_image(),a
 """
 # Really thorough optimisation of defocus
 # Start with a visible, nicely-focused spot
-test_spot = [20,-10,0,1];
-slm.make_spots([test_spot + [0,0,0.5,0]])
+#test_spot = [20,-10,0,1];
+slm.make_spots([test_spot + [0,0,0.2,0]])
 slm.update_gaussian_to_tophat(1900,1, distance=distance)
 #focus_stack(50,5, snap=snap)
 focus_stack(50,5, snap=snap)
@@ -410,7 +496,7 @@ width = int(imgsize[0])/10
 xsection = np.zeros((width,int(imgsize[1])),dtype=np.uint8)
 ysection = np.zeros((xsection.shape[0],int(imgsize[0])),dtype=np.uint8)
 #rs = np.linspace(-5,5,xsection.shape[0])
-rs = np.linspace(-100,100,xsection.shape[0])
+rs = np.linspace(-50,50,xsection.shape[0])
 for i, r in enumerate(rs):
     slm.zernike_coefficients = [-1.3,0.8,r,0,0,0,0,0,0,0,0,0,]
     time.sleep(0.1)

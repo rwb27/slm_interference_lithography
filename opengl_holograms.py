@@ -12,6 +12,7 @@ See the documentation for `OpenGLShaderWindow` for more information.
 """
 
 import socket
+from weakref import WeakKeyDictionary
 
 #from nplab.instrument import Instrument
 class UniformProperty(object):
@@ -36,29 +37,36 @@ class UniformProperty(object):
         self.__doc__ = """Set the uniform variable's value"""
         self.uniform_id = uniform_id
         self.max_length = max_length
-        self.last_value = None
+        self.last_values_by_object = WeakKeyDictionary()
         self.simplify_list = simplify_list
+        self.write_only = write_only
         
     def __set__(self, obj, value):
         try:
             if len(value) > self.max_length:
-                value = value[0:self.mmax_length]
+                value = value[0:self.max_length]
         except TypeError:
             #if the object wasn't iterable we end up here...
             value = [value]
         obj.set_uniform(self.uniform_id, value)
-        self.last_value = value
+        self.last_values_by_object[obj] = value
         
-    def __get__(self, obj):
+    def __get__(self, obj, cls=None):
         if self.write_only:
             raise AttributeError("This property is write-only")
-        else:
-            try:
-                if self.simplify_list:
-                    if len(self.last_value) == 1:
-                        return self.last_value[0]
-                else:
-                    return self.last_value
+        try:
+            value = self.last_values_by_object[obj]
+            if self.simplify_list:
+                if len(value) == 1:
+                    return value[0]
+            return value
+        except KeyError: # we get a KeyError if there is no value to return
+            if obj is None:
+                raise ValueError("You can't read the value of a "
+                                 "UniformProperty from the class")
+            raise ValueError("Attempt to read a UniformProperty before it has "
+                             "been set.")
+
 
 class OpenGLShaderWindow(object):
     """Python control interface to the Red Tweezers hologram engine.
