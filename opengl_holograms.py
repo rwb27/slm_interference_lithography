@@ -10,8 +10,9 @@ more "Pythonic".
 See the documentation for `OpenGLShaderWindow` for more information.
 
 """
-
+from __future__ import print_function
 import socket
+import numpy as np
 
 #from nplab.instrument import Instrument
 class UniformProperty(object):
@@ -80,10 +81,36 @@ class OpenGLShaderWindow(object):
         # We want to make sure we always get a reply
         self.query("<data>\n<network_reply>1</network_reply>\n</data>\n")
         
-    def query(self, message):
-        """Send a string to the engine, and await a response."""
+    def send(self, message):
+        """Write a string to the UDP port"""
         self.sock.sendto(message,(self.host, self.port))
-        return self.sock.recvfrom(128)
+
+    def recv(self, buffersize=128):
+        """Receive bytes from UDP"""
+        return self.sock.recvfrom(buffersize)
+        
+    def recv_until(self, endstring="</data>", buffersize=65535):
+        """Accumulate UDP packets until we've got a specific ending string"""
+        res = ""
+        while not res.endswith(endstring):
+            try:
+                msg, address = self.recv(buffersize=buffersize)
+                res += msg
+                #print("got {}, last bit '{}'".format(len(res), res[-6:]))
+            except:
+                address = "Error :("
+                break
+        return res, address
+        
+    def query(self, message, **kwargs):
+        """Send a string to the engine, and await a response."""
+        self.send(message)
+        return self.recv(**kwargs)
+        
+    def query_until(self, message, **kwargs):
+        """Perform a query but use recv_until not recv"""
+        self.send(message)
+        return self.recv_until(**kwargs)
         
     def set_shader_source(self, source):
         """Set the fragment shader that renderes the pattern."""
@@ -113,4 +140,17 @@ class OpenGLShaderWindow(object):
             " ".join(map(lambda x: "%f" % x, value)) +
             "</uniform>\n</data>\n")
             
-    
+    def retrieve_channel(self, channel=1):
+        """Retrieve the hologram channel from the engine"""
+        msg, addr = self.query_until("<data><get_hologram_channel>1</get_hologram_channel></data>")
+        self.recv() # we still get a "cheers"
+        m = re.search("<binary size=\"([\d]+)\">", msg)
+        length = int(m.group(1))
+        data_i = m.end()
+        m = re.search("<channel width=\"([\d]+)\" height=\"([\d]+)\" format=\"packedu8\">", msg)
+        w = int(m.group(1))
+        h = int(m.group(2))
+        data =  np.fromstring(msg[data_i:], dtype=np.uint8, count=length)
+        return data.reshape((w,h))
+        
+        
