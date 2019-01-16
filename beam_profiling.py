@@ -226,7 +226,16 @@ def focus_stack(N, dz, snap=None):
 def pause():
     programPause = raw_input("Press the <ENTER> key to continue...")
     
-    
+def average_image(imagename, npname, N):
+    "Save an averaged image. Imagename type .svg and npname type .npy"
+    images = []
+    for j in range (5):
+        images.append(snap())
+    averaged = np.mean(images, axis=0)
+    img = averaged
+    plt.imshow(averaged)
+    plt.savefig(imagename, format='svg', dpi=1000)
+    np.save(npname, img)
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
@@ -272,8 +281,6 @@ slm.update_gaussian_to_tophat(1.9, 0.0001)
 slm.make_spots([test_spot[:4] + [0,0,0.075,0]])
 # Check you can see the spot when you get to here...
 slm.zernike_coefficients = np.zeros(12)
-#dim_slm(1)
-#cam.exposure=-5
 res = sequential_shack_hartmann(slm, snap, test_spot[:4], 10, overlap=0.5)
 plot_shack_hartmann(res)
 
@@ -363,7 +370,7 @@ slm.radial_blaze_function = radial_blaze_function #radial blaze function moves s
 zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
 #slm.make_spots([test_spot + [0,0,0.75,0]])
-#slm.make_spots([test_spot])
+slm.make_spots([test_spot])
 #slm.update_gaussian_to_tophat(1900,1, distance=distance)
 #dim_slm(1)
 #dim_slm(0.75)
@@ -412,21 +419,15 @@ def average_fn(f, n):
     return lambda: np.mean([f() for i in range(n)])
 merit_function = lambda: np.mean([beam_sd() for i in range(3)])
 
-# Start by autofocusing (optimising mode 2)
-zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, brightest_hdr, dz=0.5, modes=[1])
-zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.1, modes=[1])
-zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=0.3, modes=[0,1,2])
-zernike_coefficients = slm.zernike_coefficients
-for dz in [0.5,0.35,0.3,0.2,0.15,0.11]:
+slm.make_spots([test_spot])
+zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
+zenike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
+zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[0])
+zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[2])
+for dz in [0.5, 0.5, 0.45, 0.4, 0.3,0.35,0.25, 0.2, 0.15]:
     print "step size: {}".format(dz)
-    zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, beam_sd, dz=dz)
-zernike_coefficients = optimise_aberration_correction(slm, cam, zernike_coefficients, average_fn(beam_sd,3), dz=0.1)
-zernike_coefficients = optimise_aberration_correction(slm, 
-                                cam, zernike_coefficients, merit_function, 
-                                dz=0.5)
-zernike_coefficients = optimise_aberration_correction(slm, 
-                                cam, zernike_coefficients, merit_function, 
-                                dz=0.1)
+    zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=dz, modes=[0,1,2])
+
 nplab.current_datafile().create_dataset("spot_image_%d",data=cam.color_image(),attrs={"zernike_coefficients":zernike_coefficients})
 
 """
@@ -434,47 +435,14 @@ nplab.current_datafile().create_dataset("spot_image_%d",data=cam.color_image(),a
 """
 # Really thorough optimisation of defocus
 # Start with a visible, nicely-focused spot
-#test_spot = [20,-10,0,1];
-slm.make_spots([test_spot[:4] + [0,0,0.2,0]])
-slm.update_gaussian_to_tophat(1900,1, distance=distance)
-#focus_stack(50,5, snap=snap)
 focus_stack(50,5, snap=snap) #focus_stack changes zcs from set
 
 """
 """
-# Scan through a parameter, plotting sections of the beam
-#changed this section as camera changed
-img = snap()
-imgsize = np.shape(img)
-width = int(imgsize[0])/10
-    
-xsection = np.zeros((width,int(imgsize[1])),dtype=np.uint8)
-ysection = np.zeros((xsection.shape[0],int(imgsize[0])),dtype=np.uint8)
-#rs = np.linspace(-5,5,xsection.shape[0])
-rs = np.linspace(-50,50,xsection.shape[0])
-for i, r in enumerate(rs):
-    slm.zernike_coefficients = [-1.3,0.8,r,0,0,0,0,0,0,0,0,0,]
-    time.sleep(0.1)
-    #img = cam.color_image()
-    img = snap()
-    #plt.imshow(img)
-    #raw_input('Press <ENTER> to continue')
-    imgsize = np.shape(img)
-    width = int(imgsize[0])/10
-    ximgcentre = int(imgsize[0])/2
-    yimgcentre = int(imgsize[1])/2
-    xsection[i,:] = np.mean(img[(ximgcentre-width):(ximgcentre+width),:], axis=0)
-    #previously 230 and 250
-    #ysection[i,:,:] = np.mean(img[:,310:330,:], axis=1)
-    ysection[i,:] = np.mean(img[:,(yimgcentre-width):(yimgcentre+width)], axis=1)
-f, axes = plt.subplots(1,2)
-axes[0].imshow(xsection,aspect='auto',extent = (0,640,rs.max(), rs.min()))
-axes[1].imshow(ysection,aspect='auto',extent = (0,480,rs.max(), rs.min()))
-
 #Scanning values of tophat
 thimages = []
 lineprofiles = []
-for i in range(15, 27, 2):
+for i in range(15, 25, 1):
     thnum = float(i)/10
     slm.update_gaussian_to_tophat(thnum, 2)
     images = []
@@ -502,6 +470,7 @@ for k in range(19, 27, 2):
     thimages = []
     lineprofiles = []
     for i in range(1500, 2000, 100):
+
         inner_edge_i = 800//18 #good
         sdtest = i/18.0
         sd = sdtest
@@ -509,6 +478,16 @@ for k in range(19, 27, 2):
         radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
         slm.radial_blaze_function = radial_blaze_function
+        
+        slm.make_spots([test_spot])
+        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
+        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
+        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[0])
+        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[2])
+        for dz in [0.5,0.35,0.3,0.2,0.15,0.11]:
+            print "step size: {}".format(dz)
+            zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=dz, modes=[0,1,2])
+        
         slm.make_spots([test_spot[:4] + [0,0,1,0]])
         slm.update_gaussian_to_tophat(thnum, 2)
         images = []
@@ -529,13 +508,14 @@ for k in range(19, 27, 2):
     plt.ylabel('Intensity (arb)')
     plt.show()
 
-##images
-for k in range(21, 25, 1):
+##images   
+
+for k in range(20, 27, 1):
     thnum = float(k)/10
     
     thimages = []
     lineprofiles = []
-    for i in range(1000, 2500, 200):
+    for i in range(800, 2900, 200):
         inner_edge_i = 800//18 #good
         sdtest = i/18.0
         sd = sdtest
@@ -543,6 +523,8 @@ for k in range(21, 25, 1):
         radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
         slm.radial_blaze_function = radial_blaze_function
+        
+        
         slm.make_spots([test_spot[:4] + [0,0,1,0]])
         slm.update_gaussian_to_tophat(thnum, 2)
         images = []
@@ -551,13 +533,14 @@ for k in range(21, 25, 1):
         averaged = np.mean(images, axis=0)
         thimages.append(averaged)
         img = averaged
+        average_image('thsize' + str(thnum) + 'radialblazesd' + str(i) + '.svg', 'thsize' + str(thnum) + 'radialblazesd' + str(i) + '.npy', 5)
         plt.title(thnum)
         plt.plot(img[img.shape[0]//2,:])
         print(i)
         plt.imshow(img)
         plt.show()
 
-##A pick: 2.5 1600
+##A pick: 2.3 1600
 inner_edge_i = 800//18 #good
 sdtest = 1600/18.0
 sd = sdtest
@@ -566,13 +549,13 @@ radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
 slm.radial_blaze_function = radial_blaze_function
 slm.make_spots([test_spot[:4] + [0,0,1,0]])
-slm.update_gaussian_to_tophat(2.5, 2)
+slm.update_gaussian_to_tophat(2.3, 2)
 
 ##
-
+z = slm.zernike_coefficients
 for k in range(22, 26, 1):
     thnum = float(k)/10
-    slm.zernike_coefficients = np.zeros(12)
+    slm.zernike_coefficients = z
     thimages = []
     lineprofiles = []
     for i in range(800, 3000, 200):
@@ -599,4 +582,26 @@ for k in range(22, 26, 1):
         
         focus_stack(50,5, snap=snap)
         plt.show()
+        
+##focal length change
+startfl = slm.focal_length
+
+for k in range(2500, 3500, 50):
+    slm.focal_length = k    
+    slm.make_spots([test_spot[:4] + [0,0,1,0]])
+    slm.update_gaussian_to_tophat(2.3, 2)
+    images = []
+    for j in range (5):
+        images.append(snap())
+    averaged = np.mean(images, axis=0)
+    thimages.append(averaged)
+    img = averaged
+    average_image('focallength' + str(k) + '.svg', 'focallength' + str(k) + '.npy', 5)
+    plt.title(k)
+    plt.plot(img[img.shape[0]//2,:])
+    print(i)
+    plt.imshow(img)
+    plt.show()
+slm.focal_length = startfl
+    
 """
