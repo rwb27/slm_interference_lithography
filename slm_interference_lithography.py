@@ -22,7 +22,7 @@ uniform float radialPhaseDr = 0.009 * 2.0;
 uniform float radialBlaze["""+str(RADIAL_ARRAY_LENGTH)+"""];
 uniform float k=15700; //units of mm-1
 uniform float f=3500.0; //mm
-uniform vec2 slmsize=vec2(6.9,6.9); //size of SLM
+uniform vec2 slmsize=vec2(17.6,10.7); //size of SLM prev 6.9
 uniform vec2 slmcentre=vec2(0.5,0.5); //centre of SLM
 const float pi = 3.141;
 
@@ -122,8 +122,9 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         """Create a hologram generator for interference lithography."""
         super(VeryCleverBeamsplitter, self).__init__(**kwargs)
         self.shader_source = IL_SHADER_SOURCE
-        self.centre = [0.5, 0.5]
-        self.active_area = [6.9, 6.9]
+        #self.centre = [0.5, 0.5] #prev value
+        self.active_area = [17.6, 10.7]
+        #self.active_area = [6.9, 6.9]
         self.blazing_function = np.linspace(0,1,32)
         self.zernike_coefficients = np.zeros(12)
         self.radial_phase_dr = 0.009*2
