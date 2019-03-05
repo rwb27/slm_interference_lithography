@@ -118,7 +118,7 @@ class OpenGLShaderWindow(object):
         self.query("<data>\n<shader_source>\n{0}\n</shader_source>\n</data>\n".format(source))
     shader_source = property(fset=set_shader_source)
     
-    def move_hologram(self, x=0, y=0, w=1024, h=768):
+    def move_hologram(self, x=30, y=30, w=512, h=512):
         """Move the hologram on the screen."""
         self.query("<data>\n"
                    "<window_rect>{0},{1},{2},{3}</window_rect>\n"

@@ -19,6 +19,7 @@ from threading import Thread
 from scipy.ndimage.filters import gaussian_filter
 import h5py 
 from scipy.interpolate import UnivariateSpline
+from threading import Thread
 
 # This is a big string constant that actually renders the hologram.  See below
 # for the useful Python code that you might want to use...
@@ -203,7 +204,7 @@ def lookup_table_from_phases(grays, phases, plot=False):
 if __name__ == "__main__":
     slm = SlitHologram()
     #slm.move_hologram(0,0,512,512)
-    slm.move_hologram(-800,0,800,600)
+    slm.move_hologram(1920,0,1920,1152)
     slm.set_aspect(4.0/3.0)
     slm.n = 0
     slm.unit_cell = [1.0/256 for i in range(2)]
@@ -223,7 +224,7 @@ if __name__ == "__main__":
     # This block will take a detailed gray level to phase measurement
 
     data_group = df.create_group("phase_sweep_%d")
-    data_group.attrs['SLM'] = "Hamamatsu"
+    data_group.attrs['SLM'] = "Medowlark"
     data_group.attrs['laser'] = "HeNe"
     gray_levels = np.linspace(0,1,256)
     data_group['gray_levels'] = gray_levels
@@ -263,5 +264,5 @@ if __name__ == "__main__":
     # To turn that measurement into a look-up table:
     g = data_group
     LUT = lookup_table_from_phases(g['gray_levels'], g['phases'], plot=True)
-    np.savez("hamamatsu_633_lut.npz", phases=LUT[0], grays=LUT[1])
+    np.savez("medowlark_633_lut.npz", phases=LUT[0], grays=LUT[1])
 """

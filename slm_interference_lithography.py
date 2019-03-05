@@ -8,7 +8,7 @@ Created on Mon Dec 01 12:04:12 2014
 import numpy as np
 from opengl_holograms import OpenGLShaderWindow, UniformProperty
 
-RADIAL_ARRAY_LENGTH = 384
+RADIAL_ARRAY_LENGTH = 576
 
 # This is a big string constant that actually renders the hologram.  See below
 # for the useful Python code that you might want to use...
@@ -253,7 +253,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
  
 if __name__ == "__main__":
     slm = VeryCleverBeamsplitter()
-    slm.move_hologram(1920,0,1024,768)
+    slm.move_hologram(1920,0,1920,1152)
     # set uniform values so it has a blazing function and no aberration correction
     blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
        139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,

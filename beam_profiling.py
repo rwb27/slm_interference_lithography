@@ -242,23 +242,24 @@ if __name__ == '__main__':
     #shutter = ILShutter("COM1")
     #laser = OndaxLaser("COM4")
     cam = ThorLabsCamera()
-    slm.move_hologram(1920,0,1024,768)
+    slm.move_hologram(1920,0,1920,1152)
     #previously
     #slm.move_hologram(-800,0,800,600)
     # set uniform values so it has a blazing function and no aberration correction
-    blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
-       139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
-       255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
+    blazing_function = np.load('medowlark_633_lut.npz')['grays']
+    #blazing_function = np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,  12,  69,  92, 124,
+       #139, 155, 171, 177, 194, 203, 212, 225, 234, 247, 255, 255, 255,
+       #255, 255, 255, 255, 255, 255]).astype(np.float)/255.0 #np.linspace(0,1,32)
     slm.blazing_function = blazing_function
     slm.zernike_coefficients = np.zeros(12)
     slm.centre = [0.5, 0.5]
-    slm.active_area = [6.9, 6.9]
+    slm.active_area = [10.7, 10.7] #[17.6, 10.7]
     slm.radial_phase_dr = 0.009*2
     slm.wavevector = 2*np.pi/(633e-9*1e3)
-    slm.focal_length = 3040
+    slm.focal_length = 3000
     #distance = 2325e3
     #slm.update_gaussian_to_tophat(1900,3000, distance=distance)
-    #slm.update_gaussian_to_tophat(1900,1, distance=distance)
+    #slm.update_gaussian_to_tophat(1900,1)
     slm.disable_gaussian_to_tophat()
     slm.make_spots([[20,10,0,1],[-20,10,0,1]])
     test_spot = [-20,10,0,1]
