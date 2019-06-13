@@ -239,6 +239,7 @@ def average_image(imagename, npname, N):
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
+    slm.set_aspect(1.0)
     #shutter = ILShutter("COM1")
     #laser = OndaxLaser("COM4")
     cam = ThorLabsCamera()
@@ -350,7 +351,7 @@ plt.plot(rr,spl(rr))
 plt.plot(radii,I,'.')
 
 
-slm.centre=(cx,cy)
+#slm.centre=(cx,cy)
 slm.radial_blaze_function = np.ones(384)
 inner_edge_i = 1500//18 #bad
 sd = 400/18.0
@@ -443,8 +444,10 @@ focus_stack(50,5, snap=snap) #focus_stack changes zcs from set
 #Scanning values of tophat
 thimages = []
 lineprofiles = []
-for i in range(15, 25, 1):
+for i in range(17, 45, 2):
     thnum = float(i)/10
+    slm.make_spots([test_spot])
+    slm.make_spots([test_spot[:4] + [0,0,1,0]])
     slm.update_gaussian_to_tophat(thnum, 2)
     images = []
     for j in range (5):
@@ -454,6 +457,12 @@ for i in range(15, 25, 1):
     img = averaged
     lineprofiles.append(img[:,img.shape[1]//2])
     time.sleep(0.1)
+    
+    plt.title(thnum)
+    plt.plot(img[img.shape[0]//2,:])
+    print(i)
+    plt.imshow(img)
+    plt.show()
 
 #Plot the line profiles
 for i in range(0, len(lineprofiles)-1):
@@ -465,12 +474,12 @@ plt.show()
 
 ##Changing radial function
 
-for k in range(19, 27, 2):
+for k in range(1, 30, 2):
     thnum = float(k)/10
     
     thimages = []
     lineprofiles = []
-    for i in range(1500, 2000, 100):
+    for i in range(1400, 2000, 100):
 
         inner_edge_i = 800//18 #good
         sdtest = i/18.0
@@ -481,14 +490,6 @@ for k in range(19, 27, 2):
         slm.radial_blaze_function = radial_blaze_function
         
         slm.make_spots([test_spot])
-        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
-        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
-        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[0])
-        zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[2])
-        for dz in [0.5,0.35,0.3,0.2,0.15,0.11]:
-            print "step size: {}".format(dz)
-            zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=dz, modes=[0,1,2])
-        
         slm.make_spots([test_spot[:4] + [0,0,1,0]])
         slm.update_gaussian_to_tophat(thnum, 2)
         images = []
@@ -508,15 +509,29 @@ for k in range(19, 27, 2):
     plt.xlabel('Pixels')
     plt.ylabel('Intensity (arb)')
     plt.show()
+    images = []
+    for j in range (5):
+        images.append(snap())
+    averaged = np.mean(images, axis=0)
+    thimages.append(averaged)
+    img = averaged
+    
+#average_image('thsize' + str(thnum) + 'radialblazesd' + str(i) + '.svg', 'thsize' + str(thnum) + 'radialblazesd' + str(i) + '.npy', 5)
+    plt.title(thnum)
+    plt.plot(img[img.shape[0]//2,:])
+    print(i)
+    plt.imshow(img)
+    plt.show()
+
 
 ##images   
 
-for k in range(20, 27, 1):
+for k in range(1, 30, 2):
     thnum = float(k)/10
     
     thimages = []
     lineprofiles = []
-    for i in range(800, 2900, 200):
+    for i in range(1000, 2800, 200):
         inner_edge_i = 800//18 #good
         sdtest = i/18.0
         sd = sdtest
@@ -525,6 +540,12 @@ for k in range(20, 27, 1):
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
         slm.radial_blaze_function = radial_blaze_function
         
+        #REMOVE IF NECESSARY
+        #slm.make_spots([test_spot])
+     
+        #for dz in [0.4, 0.2, 0.15]:
+            #print "step size: {}".format(dz)
+            #zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=dz, modes=[0,1,2])
         
         slm.make_spots([test_spot[:4] + [0,0,1,0]])
         slm.update_gaussian_to_tophat(thnum, 2)
@@ -542,8 +563,9 @@ for k in range(20, 27, 1):
         plt.show()
 
 ##A pick: 2.3 1600
-inner_edge_i = 800//18 #good
+inner_edge_i = 100//18 #good at 800
 sdtest = 1600/18.0
+sdtest = 2400/18.0
 sd = sdtest
 nrest = 384 - inner_edge_i
 radial_blaze_function = np.concatenate([np.ones(inner_edge_i),

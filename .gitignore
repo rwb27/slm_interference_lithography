@@ -147,3 +147,5 @@ $RECYCLE.BIN/
 /Hamatsudata/
 /data/
 *.h5
+*.npy
+*.svg
