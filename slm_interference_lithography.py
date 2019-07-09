@@ -171,7 +171,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     centre = UniformProperty(10, max_length=2)
     
 
-    def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False):
+    def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False, darkfieldimage):
         """Calculate a radial phase function to re-map from gaussian to top-hat.
         
         N: number of points to calculate
@@ -194,7 +194,10 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
             = (2r/w^2) * [1 - exp(-r^2/w^2)]
             The normalisation takes care of the 2r/w^2 term.
             """
-            return 1 - np.exp(-r**2/(w**2)) #NB there's no 2 as it's *intensity*
+            r, I, smoothI, dummyval/r = measure_intensity(100,1, 360, darkfieldimage)
+            
+            return I
+            #return 1 - np.exp(-r**2/(w**2)) #NB there's no 2 as it's *intensity*
         def cumulative_I_tophat(r, r_beam):
             """Fraction of a top-hat contained within a given radius."""
             if r<r_beam:

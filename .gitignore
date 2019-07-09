@@ -146,6 +146,6 @@ $RECYCLE.BIN/
 /BNS/
 /Hamatsudata/
 /data/
-*.h5
 *.npy
 *.svg
+*.png

@@ -10,7 +10,7 @@ from nplab.instrument.light_sources.ondax_laser import OndaxLaser
 from nplab.instrument.shutter.southampton_custom import ILShutter
 from nplab.instrument.camera.opencv import OpenCVCamera
 from nplab.instrument.camera.thorlabs_uc480 import ThorLabsCamera
-from slm_interference_lithography import VeryCleverBeamsplitter
+from slm_interference_lithography import VeryCleverBeamsplitter, RADIAL_ARRAY_LENGTH
 from nplab.utils.gui import show_guis
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,6 +21,7 @@ import nplab.utils.gui
 import nplab
 from nplab.utils.array_with_attrs import ArrayWithAttrs
 from measure_orders import POIManager, sum_rois
+from scipy.signal import savgol_filter
 
 
 
@@ -236,6 +237,57 @@ def average_image(imagename, npname, N):
     plt.imshow(averaged)
     plt.savefig(imagename, format='svg', dpi=1000)
     np.save(npname, img)
+    
+def cosine_apodisation(r1, r2, n=384):
+    "Return an array with ones at the start, then a cosine from 1 to zero, then zeros"
+    return np.concatenate([np.ones(r1),
+                           np.cos(np.linspace(0, np.pi/2, r2-r1))**2,
+                           np.zeros(n-r2)])
+
+def piecewisefilter(r1, n=384):
+    "Return an array with ones at the start, then zeros"
+    return np.concatenate([np.ones(r1), np.zeros(n-r1)])
+
+def measure_intensity(N,ie_start, ie_end, darkfieldimage):
+    """Measure the beam intensity as a function of r using the radial blazing function"""
+    #ie - inner edge
+    #measure besm with no radial blazing first
+    #assume we will test out until end, assumes radial blaze size 384
+    slm.radial_blaze_function = np.ones(384)
+    ie_steps = (384 - ie_start)/N
+    anAvImg = []
+    I = []
+    r = []
+    for i in range(N):
+        
+        #radial_blaze = cosine_apodisation(ie_start+(i*ie_steps), ie_end+(i*ie_steps)) #need to review input as have slightly changed meaning with piecewise
+        #changed to tophat to cut off slm function
+        #print ie_start+(i*ie_steps)
+        radial_blaze = piecewisefilter(ie_start+(i*ie_steps))
+        slm.radial_blaze_function = radial_blaze
+        #plt.plot(radial_blaze)
+        time.sleep(0.1)
+        anAvImg = []
+        for j in range (20):
+            anAvImg.append(snap())
+        averaged = np.mean(anAvImg, axis=0)
+        img = averaged - darkfieldimage
+        #Normalize
+        assert np.sum(np.isnan(img)) == 0, 'There are %f NANs in img!'%(np.sum(np.isnan(img)))
+        img = img/255.
+        I.append(np.mean(img)*100)
+        r.append(ie_start+(i*ie_steps))
+        #plt.imshow(img)
+        #plt.show()
+        del anAvImg[:]
+    smoothI = savgol_filter(I, 51, 3)
+    dummyval = smoothI/r
+    return (r, I, smoothI, dummyval/r)
+    
+        
+        
+        
+    return 
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
@@ -282,7 +334,7 @@ if __name__ == '__main__':
 slm.update_gaussian_to_tophat(1.9, 0.0001)
 slm.make_spots([test_spot[:4] + [0,0,0.075,0]])
 # Check you can see the spot when you get to here...
-slm.zernike_coefficients = np.zeros(12)
+#slm.zernike_coefficients = np.zeros(12)
 res = sequential_shack_hartmann(slm, snap, test_spot[:4], 10, overlap=0.5)
 plot_shack_hartmann(res)
 
@@ -363,6 +415,13 @@ nrest = 384 - inner_edge_i
 radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
                                         np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
 slm.radial_blaze_function = radial_blaze_function #radial blaze function moves spot - change in centre?
+
+def cosine_apodisation(r1, r2, n=RADIAL_ARRAY_LENGTH, dr=slm.radial_phase_dr):
+    "Return an array with ones at the start, then a cosine from 1 to zero, then zeros"
+    return np.concatenate([np.ones(int(r1/dr)),
+                           np.cos(np.linspace(0, np.pi/2, int(r2/dr)-int(r1/dr)))**2,
+                           np.zeros(n-int(r2/dr))])
+
 """
 """
 
@@ -373,7 +432,7 @@ zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
 #slm.make_spots([test_spot + [0,0,0.75,0]])
 slm.make_spots([test_spot])
-#slm.update_gaussian_to_tophat(1900,1, distance=distance)
+slm.update_gaussian_to_tophat(1.9, 0.0001)
 #dim_slm(1)
 #dim_slm(0.75)
 #dim_slm(0.5)
@@ -421,7 +480,7 @@ def average_fn(f, n):
     return lambda: np.mean([f() for i in range(n)])
 merit_function = lambda: np.mean([beam_sd() for i in range(3)])
 
-slm.make_spots([test_spot])
+
 zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
 zenike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
 zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[0])
@@ -444,11 +503,9 @@ focus_stack(50,5, snap=snap) #focus_stack changes zcs from set
 #Scanning values of tophat
 thimages = []
 lineprofiles = []
-for i in range(17, 45, 2):
+for i in range(20, 50, 2):
     thnum = float(i)/10
-    slm.make_spots([test_spot])
-    slm.make_spots([test_spot[:4] + [0,0,1,0]])
-    slm.update_gaussian_to_tophat(thnum, 2)
+    slm.update_gaussian_to_tophat(thnum, 2.8)
     images = []
     for j in range (5):
         images.append(snap())
@@ -526,29 +583,18 @@ for k in range(1, 30, 2):
 
 ##images   
 
-for k in range(1, 30, 2):
+for k in range(20, 35, 1):
     thnum = float(k)/10
     
     thimages = []
     lineprofiles = []
-    for i in range(1000, 2800, 200):
-        inner_edge_i = 800//18 #good
-        sdtest = i/18.0
-        sd = sdtest
-        nrest = 384 - inner_edge_i
-        radial_blaze_function = np.concatenate([np.ones(inner_edge_i),
-                                        np.exp(-(np.arange(nrest))**2/2.0/sd**2)])
+    for i in range(13, 53, 2):
+        rbnum = float(i)/10
+        slm.radial_blaze_function = cosine_apodisation(rbnum, 5.3)
+        
         slm.radial_blaze_function = radial_blaze_function
         
-        #REMOVE IF NECESSARY
-        #slm.make_spots([test_spot])
-     
-        #for dz in [0.4, 0.2, 0.15]:
-            #print "step size: {}".format(dz)
-            #zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=dz, modes=[0,1,2])
-        
-        slm.make_spots([test_spot[:4] + [0,0,1,0]])
-        slm.update_gaussian_to_tophat(thnum, 2)
+        slm.update_gaussian_to_tophat(thnum, 3)
         images = []
         for j in range (5):
             images.append(snap())
