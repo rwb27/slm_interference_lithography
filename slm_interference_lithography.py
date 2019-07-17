@@ -132,6 +132,7 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
         self.focal_length = 3500
         self.disable_gaussian_to_tophat()
         self.radial_blaze_function = np.ones(RADIAL_ARRAY_LENGTH)
+        self.input_beam_cumulative_I = np.linspace(0, 1, RADIAL_ARRAY_LENGTH-1)
 
     def make_spots(self, spots):
         """Use the gratings-and-lenses algorithm to make a number of spots.
@@ -171,33 +172,49 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
     centre = UniformProperty(10, max_length=2)
     
 
-    def gaussian_to_tophat_phase(self, N, dr, wavelength, initial_waist, target_radius, propagation_distance, wrap=False, darkfieldimage):
+    @property
+    def input_beam_r(self):
+        """A set of radial coordinates against which we define the input beam.
+        """
+        return (np.arange(RADIAL_ARRAY_LENGTH-1) + 0.5) * self.radial_phase_dr
+
+    def set_gaussian_input_beam(self, waist):
+        """Use the cumulative intensity profile of a Gaussian beam
+    
+        Set self.input_beam_cumulative_I to be the fraction of a 2D Gaussian 
+        contained within a given radius.  The radial coordinates are set
+        by self.radial_phase_dr
+            
+        The equation of the underlying gaussian is np.exp(-r**2/(w**2))
+        remember d/dx exp(-r^2/w^2) = exp(-r^2/w^2) * (-2r/w^2)
+        so int[0,R] e**(-r**2/w**2) r dr
+        = (2r/w^2) * [1 - exp(-r^2/w^2)]
+        The normalisation takes care of the 2r/w^2 term.
+        
+        NB the radial coordinate here has **one fewer** element than the
+        eventual radial phase function/radial blazing function, because it gets
+        numerically integrated.  The first point here is r=0.5*radial_phase_dr
+        """
+        r = self.input_beam_r
+        self.input_beam_cumulative_I = 1 - np.exp(-r**2/(waist**2)) #NB there's no 2 as it's *intensity*
+        #    r, I, smoothI, dummyval/r = measure_intensity(100,1, 360, darkfieldimage)
+            
+        #    return I
+        
+    def reshape_to_tophat(self, target_radius, distance=None):
         """Calculate a radial phase function to re-map from gaussian to top-hat.
         
-        N: number of points to calculate
-        dr: radial spacing between points
-        wavelength: wavelength of the light
-        initial_waist: 1/e radius of starting beam
         target_radius: size of target top-hat beam
-        propagation_distance: distance from SLM to target plane
+        distance: distance from SLM to target plane (defaults to self.focal_length)
         
-        Units can be anything - but should be self-consistent.  Microns are good.
+        Units should be self-consistent, probably mm.
         """
-        k = np.pi*2/wavelength
+        if distance is None:
+            distance =  self.focal_length
+        N = RADIAL_ARRAY_LENGTH
+        dr = (self.radial_phase_dr)
+        k = float(self.wavevector)
         # Next, calculate the phase shift as a function of radius
-        def cumulative_I_gaussian(r, w):
-            """The fraction of a 2D Gaussian contained within a given radius.
-            
-            The equation of the underlying gaussian is np.exp(-r**2/(w**2))
-            remember d/dx exp(-r^2/w^2) = exp(-r^2/w^2) * (-2r/w^2)
-            so int[0,R] e**(-r**2/w**2) r dr
-            = (2r/w^2) * [1 - exp(-r^2/w^2)]
-            The normalisation takes care of the 2r/w^2 term.
-            """
-            r, I, smoothI, dummyval/r = measure_intensity(100,1, 360, darkfieldimage)
-            
-            return I
-            #return 1 - np.exp(-r**2/(w**2)) #NB there's no 2 as it's *intensity*
         def cumulative_I_tophat(r, r_beam):
             """Fraction of a top-hat contained within a given radius."""
             if r<r_beam:
@@ -205,36 +222,31 @@ class VeryCleverBeamsplitter(OpenGLShaderWindow):
             else:
                 return 1
         def inverse_cumulative_I_tophat(I_cum, r_beam):
-            """Radius at which a given fraction of the beam is enclosed."""
+            """Radius at which a given fraction of the beam is enclosed.
+            
+            NB you might expect to numerically invert cumulative_I_tophat, and
+            that's why that function is defined.  But actually it's easier to
+            do analytically, which is what we do here.
+            
+            R_beam is the radius of the top-hat beam.
+            """
             return np.sqrt(I_cum) * r_beam
         
         phase_shift = np.zeros((N)) #array the right length
-        tilt = np.zeros(len(phase_shift)-1)
-        for i in range(len(tilt)):
-            r = (i+0.5)*dr
-            target_r = inverse_cumulative_I_tophat(
-                            cumulative_I_gaussian(r, initial_waist),
+        r = self.input_beam_r
+        target_r = inverse_cumulative_I_tophat(
+                            self.input_beam_cumulative_I,
                             target_radius)
-            tilt[i] = (target_r-r)/propagation_distance
+        tilt = (target_r-r)/distance
         for i in range(1,len(phase_shift)):
             #this is just a lens
             phase_shift[i] = phase_shift[i-1] + tilt[i-1] * k * dr
-        if wrap:
-            return ((phase_shift + np.pi) % (2 * np.pi)) - np.pi
-        else:
-            return phase_shift
+        self.radial_phase_function = phase_shift
         
-    def update_gaussian_to_tophat(self, initial_r, final_r, distance=None):
-        if distance is None:
-            distance =  self.focal_length
+    def reshape_gaussian_to_tophat(self, initial_r, final_r, distance=None):
         """Update the parameters used to map gaussian -> top hat"""
-        self.radial_phase_function = self.gaussian_to_tophat_phase(RADIAL_ARRAY_LENGTH, #length
-                                              self.radial_phase_dr, #pixel size/mm
-                                              2*np.pi/float(self.wavevector), #wavelength/mm
-                                              initial_r, #initial 1/e radius
-                                              final_r, #final radius
-                                              distance, #propagation distance
-                                              wrap=False) #don't phase-wrap
+        self.set_gaussian_input_beam(initial_r)
+        self.reshape_to_tophat(final_r, distance=distance)
 
     def disable_gaussian_to_tophat(self):
         """Set the radial phase function to zero"""

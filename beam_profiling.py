@@ -268,7 +268,7 @@ def measure_intensity(N,ie_start, ie_end, darkfieldimage):
         #plt.plot(radial_blaze)
         time.sleep(0.1)
         anAvImg = []
-        for j in range (20):
+        for j in range (10):
             anAvImg.append(snap())
         averaged = np.mean(anAvImg, axis=0)
         img = averaged - darkfieldimage
@@ -280,14 +280,14 @@ def measure_intensity(N,ie_start, ie_end, darkfieldimage):
         #plt.imshow(img)
         #plt.show()
         del anAvImg[:]
-    smoothI = savgol_filter(I, 51, 3)
-    dummyval = smoothI/r
-    return (r, I, smoothI, dummyval/r)
-    
-        
-        
-        
-    return 
+    #smoothI = savgol_filter(I, 51, 3)
+    #dummyval = smoothI/r
+    return (r, I)
+
+def set_input_beam_from_measurement(slm, r, I):
+    """Set the SLM input beam from a set of measured (r, cumulative I) points"""
+    normI = (I - np.min(I))/(np.max(I)-np.min(I))
+    slm.input_beam_cumulative_I = np.interp(slm.input_beam_r, r, normI)
 
 if __name__ == '__main__':
     slm = VeryCleverBeamsplitter()
