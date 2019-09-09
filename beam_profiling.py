@@ -22,6 +22,7 @@ import nplab
 from nplab.utils.array_with_attrs import ArrayWithAttrs
 from measure_orders import POIManager, sum_rois
 from scipy.signal import savgol_filter
+import scipy.interpolate
 
 
 
@@ -238,22 +239,31 @@ def average_image(imagename, npname, N):
     plt.savefig(imagename, format='svg', dpi=1000)
     np.save(npname, img)
     
-def cosine_apodisation(r1, r2, n=384):
+def cosine_apodisation(r1, r2, n=RADIAL_ARRAY_LENGTH):
     "Return an array with ones at the start, then a cosine from 1 to zero, then zeros"
     return np.concatenate([np.ones(r1),
                            np.cos(np.linspace(0, np.pi/2, r2-r1))**2,
                            np.zeros(n-r2)])
 
-def piecewisefilter(r1, n=384):
+def piecewisefilter(r1, n=RADIAL_ARRAY_LENGTH):
     "Return an array with ones at the start, then zeros"
     return np.concatenate([np.ones(r1), np.zeros(n-r1)])
+
+def notchfilter(r0, dr, n=RADIAL_ARRAY_LENGTH):
+    """An array with zeros, then 1s, then zeros"""
+    return np.concatenate([np.zeros(r0), np.ones(dr), np.zeros(n-r0-dr)])
+
 
 def measure_intensity(N,ie_start, ie_end, darkfieldimage):
     """Measure the beam intensity as a function of r using the radial blazing function"""
     #ie - inner edge
     #measure besm with no radial blazing first
     #assume we will test out until end, assumes radial blaze size 384
-    slm.radial_blaze_function = np.ones(384)
+    
+    #slm.radial_blaze_function = np.ones(384)
+    #input radial blaze function, for when apodisation has been applied
+    inputradialblaze = slm.radial_blaze_function
+    
     ie_steps = (384 - ie_start)/N
     anAvImg = []
     I = []
@@ -263,7 +273,7 @@ def measure_intensity(N,ie_start, ie_end, darkfieldimage):
         #radial_blaze = cosine_apodisation(ie_start+(i*ie_steps), ie_end+(i*ie_steps)) #need to review input as have slightly changed meaning with piecewise
         #changed to tophat to cut off slm function
         #print ie_start+(i*ie_steps)
-        radial_blaze = piecewisefilter(ie_start+(i*ie_steps))
+        radial_blaze = inputradialblaze*piecewisefilter(ie_start+(i*ie_steps))
         slm.radial_blaze_function = radial_blaze
         #plt.plot(radial_blaze)
         time.sleep(0.1)
@@ -284,6 +294,116 @@ def measure_intensity(N,ie_start, ie_end, darkfieldimage):
     #dummyval = smoothI/r
     return (r, I)
 
+
+def measure_intensity(dr, window=None):
+    """Measure the beam intensity as a function of r using the radial blazing function"""
+    if window is None:
+        window = dr
+    else:
+        raise NotImplementedError("window should be none")
+    
+    #input radial blaze function, for when apodisation has been applied
+    inputradialblaze = slm.radial_blaze_function
+    
+    anAvImg = []
+    I = []
+    rs = []
+    slm.radial_blaze_function = np.zeros(RADIAL_ARRAY_LENGTH)
+    time.sleep(0.1)
+    darkfieldimage = snap()
+    for r in range(0, int(RADIAL_ARRAY_LENGTH/1.5), dr):
+        
+        #radial_blaze = cosine_apodisation(ie_start+(i*ie_steps), ie_end+(i*ie_steps)) #need to review input as have slightly changed meaning with piecewise
+        #changed to tophat to cut off slm function
+        #print ie_start+(i*ie_steps)
+        radial_blaze = inputradialblaze*notchfilter(r, window)
+        slm.radial_blaze_function = radial_blaze
+        #plt.plot(radial_blaze)
+        time.sleep(0.1)
+        snap()
+        anAvImg = []
+        for j in range(1):
+            anAvImg.append(snap())
+        averaged = np.mean(anAvImg, axis=0)
+        img = averaged - darkfieldimage
+        #Normalize
+        assert np.sum(np.isnan(img)) == 0, 'There are %f NANs in img!'%(np.sum(np.isnan(img)))
+        img = img/255.
+        I.append(np.mean(img)*100)
+        rs.append(r)
+        #plt.imshow(img)
+        #plt.show()
+        del anAvImg[:]
+    #smoothI = savgol_filter(I, 51, 3)
+    #dummyval = smoothI/r
+    r = np.array([-window] + rs) + window
+    I_norm = np.array([np.min(I)] + I)
+    I_norm -= np.min(I)
+    I = np.cumsum(I_norm)
+    
+    slm.radial_blaze_function = inputradialblaze
+    return r, I
+
+def measure_intensity(dr, repeats=2, margin=10, outer_edge=RADIAL_ARRAY_LENGTH/1.5):
+    """Measure the beam intensity as a function of r using the radial blazing function"""
+    
+    #input radial blaze function, for when apodisation has been applied
+    inputradialblaze = slm.radial_blaze_function
+    single_rs = np.arange(0, outer_edge, dr)
+    rs = np.concatenate((np.zeros(margin), 
+                         np.tile(np.concatenate((single_rs, 
+                                                   single_rs[::-1],
+                                                   np.zeros(margin))), 
+                                   repeats)
+                         )).astype(np.int)
+    slm.radial_blaze_function = np.zeros(RADIAL_ARRAY_LENGTH)
+    time.sleep(0.1)
+    darkfieldimage = snap()
+    Is = np.empty_like(rs.astype(np.float))
+    for i, r in enumerate(rs):
+        radial_blaze = inputradialblaze*notchfilter(0, r)
+        slm.radial_blaze_function = radial_blaze
+        #plt.plot(radial_blaze)
+        Is[i] = np.mean(snap().astype(np.float64))
+    
+    slm.radial_blaze_function = inputradialblaze
+    return rs, Is
+
+def process_intensity(rs, Is):
+    """Calculate the intensity as a function of radius, given a set of measurements
+    
+    rs should be outer radii of the aperture in pixels
+    Is should be the corresponding intensity
+    """
+    
+    baseline_sparse_I = Is[rs==0]
+    baseline_sparse_r = np.arange(len(rs))[rs==0]
+    baseline_I = np.interp(np.arange(len(rs)), baseline_sparse_r, baseline_sparse_I)
+    corrected_I = Is - baseline_I
+    
+    indices = np.argsort(rs)
+    sorted_r = rs[indices]
+    sorted_I = corrected_I[indices]
+    
+    unique_r = []
+    unique_I = []
+    
+    current_r = 0
+    current_Is = []
+    for i in range(len(rs)):
+        if sorted_r[i] == current_r:
+            current_Is.append(sorted_I[i])
+        else:
+            unique_r.append(current_r)
+            unique_I.append(np.mean(current_Is))
+            
+            current_r = sorted_r[i]
+            current_Is = [sorted_I[i]]
+    unique_r.append(current_r)
+    unique_I.append(np.mean(current_Is))
+    
+    return np.array(unique_r), np.array(unique_I)
+    
 def set_input_beam_from_measurement(slm, r, I):
     """Set the SLM input beam from a set of measured (r, cumulative I) points"""
     normI = (I - np.min(I))/(np.max(I)-np.min(I))
@@ -432,7 +552,7 @@ zernike_coefficients = np.zeros(12)
 slm.zernike_coefficients = zernike_coefficients
 #slm.make_spots([test_spot + [0,0,0.75,0]])
 slm.make_spots([test_spot])
-slm.update_gaussian_to_tophat(1.9, 0.0001)
+slm.reshape_gaussian_to_tophat(2.0, 0.00000001)
 #dim_slm(1)
 #dim_slm(0.75)
 #dim_slm(0.5)
@@ -480,7 +600,8 @@ def average_fn(f, n):
     return lambda: np.mean([f() for i in range(n)])
 merit_function = lambda: np.mean([beam_sd() for i in range(3)])
 
-
+zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=1, modes=[1])
+zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.8, modes=[1])
 zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
 zenike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[1])
 zernike_coefficients = optimise_aberration_correction(slm, cam, brightest_hdr, dz=0.5, modes=[0])
@@ -672,5 +793,87 @@ for k in range(2500, 3500, 50):
     plt.imshow(img)
     plt.show()
 slm.focal_length = startfl
+
+
+#APD AND MEASUREMENT LOOP
+firsthalfthimages = thimages
+firsthalflineplot = lineplots
+
+middlethimages = thimages
+middlelineplots = lineplots
+
+lastthimages = thimages
+lastlineplots = lineplots
+
+
+thimages = []
+lineplots = []
+slm.make_spots([test_spot])
+slm.reshape_to_tophat(2)
+
+for i in range(1, 241, 20):
+    #Apply apodisation
+    loopblaze = cosine_apodisation(i, 370)
+    slm.radial_blaze_function = loopblaze
+    plt.plot(loopblaze)
+    plt.show()
+    plt.close()
+
     
+    #Measure beam and use this for tophat shaping
+    r, I = measure_intensity(30, 1, 300, darkfieldI)
+    #plt.plot(r, I)
+    set_input_beam_from_measurement(slm, np.array(r)*slm.radial_phase_dr, I)
+    #plt.plot(slm.input_beam_r, slm.input_beam_cumulative_I)
+    
+    slm.radial_blaze_function = loopblaze
+    #look at top hat
+    time.sleep(0.1)
+    slm.make_spots([test_spot])
+    slm.reshape_to_tophat(2)
+    
+    images = []
+    for j in range (5):
+        images.append(snap())
+    averaged = np.mean(images, axis=0)
+    thimages.append(averaged)
+    plt.plot(np.sum(averaged, axis = 1))
+    plt.show()
+    plt.close()
+    lineplots.append(np.sum(averaged,axis=1))
+    
+    print(i)
+    plt.imshow(averaged)
+    plt.show()
+    plt.close()
+    
+    del images
+    del r 
+    del I
+    del averaged
+    gc.collect()
+    
+    
+    
+    
+    
+    plt.plot(cosine_apodisation(i, 370))
+    plt.show()
+    plt.close()
+    plt.plot(np.sum(img, axis = 1))
+    lineplots.append(np.sum(img,axis=1))
+    #plt.plot(img[img.shape[0]//2,:])
+    plt.show()
+    plt.close()
+    print(i)
+    plt.imshow(img)
+    plt.show()
+    plt.close()
+
+images = []
+time.sleep(5)
+for j in range(50):
+    images.append(snap())
+    time.sleep(0.5)
+ averaged = np.mean(images, axis=0)
 """
